@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/v2_providers.dart';
-import '../ui/glass.dart';
+import '../widgets/app_card.dart';
+import '../theme/app_tokens.dart';
 import 'product_page.dart';
 
 class ProductListPage extends ConsumerWidget {
@@ -11,36 +12,38 @@ class ProductListPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final products = ref.watch(productsByTopicProvider(topicId));
+    final tokens = context.tokens;
 
     return Scaffold(
       appBar: AppBar(title: Text('商品 · $topicId')),
+      backgroundColor: tokens.bg,
       body: products.when(
         data: (ps) => ps.isEmpty
             ? Center(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
-                  child: GlassCard(
+                  child: AppCard(
                     child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('此主題下無產品', 
+                          Text('此主題下無產品', 
                             style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 16)),
                           const SizedBox(height: 12),
                           Text('Topic ID: $topicId', 
-                            style: TextStyle(color: Colors.black.withValues(alpha: 0.7), fontSize: 14)),
+                            style: TextStyle(color: tokens.textSecondary, fontSize: 14)),
                           const SizedBox(height: 8),
-                          const Text('查詢條件:', 
-                            style: TextStyle(color: Colors.black, fontWeight: FontWeight.w600, fontSize: 12)),
+                          Text('查詢條件:', 
+                            style: TextStyle(color: tokens.textPrimary, fontWeight: FontWeight.w600, fontSize: 12)),
                           const SizedBox(height: 4),
                           Text('  • published = true', 
-                            style: TextStyle(color: Colors.black.withValues(alpha: 0.6), fontSize: 12)),
+                            style: TextStyle(color: tokens.textSecondary, fontSize: 12)),
                           Text('  • topicId = "$topicId"', 
-                            style: TextStyle(color: Colors.black.withValues(alpha: 0.6), fontSize: 12)),
+                            style: TextStyle(color: tokens.textSecondary, fontSize: 12)),
                           Text('  • orderBy(order)', 
-                            style: TextStyle(color: Colors.black.withValues(alpha: 0.6), fontSize: 12)),
+                            style: TextStyle(color: tokens.textSecondary, fontSize: 12)),
                           const SizedBox(height: 12),
                           Text('請檢查 Firestore products 集合中的文檔是否有 topicId 欄位且值為 "$topicId"', 
                             style: TextStyle(color: Colors.orange, fontSize: 12)),
@@ -58,49 +61,47 @@ class ProductListPage extends ConsumerWidget {
           itemCount: ps.length,
           itemBuilder: (_, i) {
             final p = ps[i];
-            return InkWell(
+            return AppCard(
+              padding: EdgeInsets.zero,
               onTap: () => Navigator.of(context).push(MaterialPageRoute(
                 builder: (_) => ProductPage(productId: p.id),
               )),
-              child: GlassCard(
-                padding: EdgeInsets.zero,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // 封面圖片
-                    if (p.coverImageUrl != null && p.coverImageUrl!.isNotEmpty)
-                      ClipRRect(
-                        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                        child: Image.network(
-                          p.coverImageUrl!,
-                          width: double.infinity,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 封面圖片
+                  if (p.coverImageUrl != null && p.coverImageUrl!.isNotEmpty)
+                    ClipRRect(
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                      child: Image.network(
+                        p.coverImageUrl!,
+                        width: double.infinity,
+                        height: 120,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Container(
                           height: 120,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => Container(
-                            height: 120,
-                            color: Colors.grey[200],
-                            child: const Icon(Icons.image_not_supported),
-                          ),
-                        ),
-                      ),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(p.title, maxLines: 2, overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontWeight: FontWeight.w800)),
-                            const SizedBox(height: 6),
-                            Text('${p.topicId} · ${p.level}'),
-                            const Spacer(),
-                            const Align(alignment: Alignment.bottomRight, child: Text('查看 ›')),
-                          ],
+                          color: tokens.chipBg,
+                          child: Icon(Icons.image_not_supported, color: tokens.textSecondary),
                         ),
                       ),
                     ),
-                  ],
-                ),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(p.title, maxLines: 2, overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontWeight: FontWeight.w800, color: tokens.textPrimary)),
+                          const SizedBox(height: 6),
+                          Text('${p.topicId} · ${p.level}', style: TextStyle(color: tokens.textSecondary)),
+                          const Spacer(),
+                          Align(alignment: Alignment.bottomRight, child: Text('查看 ›', style: TextStyle(color: tokens.primary))),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             );
           },
@@ -109,21 +110,21 @@ class ProductListPage extends ConsumerWidget {
         error: (err, stack) => Center(
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: GlassCard(
+            child: AppCard(
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('讀取失敗:', 
+                    Text('讀取失敗:', 
                       style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 16)),
                     const SizedBox(height: 12),
                     Text('Topic ID: $topicId', 
-                      style: TextStyle(color: Colors.black.withValues(alpha: 0.7), fontSize: 14)),
+                      style: TextStyle(color: tokens.textSecondary, fontSize: 14)),
                     const SizedBox(height: 8),
-                    const Text('錯誤訊息:', 
-                      style: TextStyle(color: Colors.black, fontWeight: FontWeight.w600, fontSize: 12)),
+                    Text('錯誤訊息:', 
+                      style: TextStyle(color: tokens.textPrimary, fontWeight: FontWeight.w600, fontSize: 12)),
                     const SizedBox(height: 4),
                     Text('$err', 
                       style: const TextStyle(color: Colors.red, fontSize: 12),
@@ -131,20 +132,20 @@ class ProductListPage extends ConsumerWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 8),
-                    const Text('查詢條件:', 
-                      style: TextStyle(color: Colors.black, fontWeight: FontWeight.w600, fontSize: 12)),
+                    Text('查詢條件:', 
+                      style: TextStyle(color: tokens.textPrimary, fontWeight: FontWeight.w600, fontSize: 12)),
                     const SizedBox(height: 4),
                     Text('  • collection: products', 
-                      style: TextStyle(color: Colors.black.withValues(alpha: 0.6), fontSize: 12)),
+                      style: TextStyle(color: tokens.textSecondary, fontSize: 12)),
                     Text('  • published = true', 
-                      style: TextStyle(color: Colors.black.withValues(alpha: 0.6), fontSize: 12)),
+                      style: TextStyle(color: tokens.textSecondary, fontSize: 12)),
                     Text('  • topicId = "$topicId"', 
-                      style: TextStyle(color: Colors.black.withValues(alpha: 0.6), fontSize: 12)),
+                      style: TextStyle(color: tokens.textSecondary, fontSize: 12)),
                     Text('  • orderBy(order)', 
-                      style: TextStyle(color: Colors.black.withValues(alpha: 0.6), fontSize: 12)),
+                      style: TextStyle(color: tokens.textSecondary, fontSize: 12)),
                     const SizedBox(height: 8),
-                    const Text('可能原因:', 
-                      style: TextStyle(color: Colors.black, fontWeight: FontWeight.w600, fontSize: 12)),
+                    Text('可能原因:', 
+                      style: TextStyle(color: tokens.textPrimary, fontWeight: FontWeight.w600, fontSize: 12)),
                     const SizedBox(height: 4),
                     Text('  • 缺少 Firestore 索引', 
                       style: TextStyle(color: Colors.orange, fontSize: 12)),

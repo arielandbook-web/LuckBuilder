@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/v2_providers.dart';
-import '../ui/glass.dart';
+import '../widgets/app_card.dart';
+import '../theme/app_tokens.dart';
 import '../ui/bubble.dart';
 import 'product_list_page.dart';
 
@@ -13,17 +14,18 @@ class CategoryPage extends ConsumerWidget {
     final segs = ref.watch(segmentsProvider);
     final selected = ref.watch(selectedSegmentProvider);
     final topics = ref.watch(topicsForSelectedSegmentProvider);
+    final tokens = context.tokens;
 
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Text('分類', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+          Text('分類', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: tokens.textPrimary)),
           const SizedBox(height: 12),
 
           segs.when(
             data: (list) => list.isEmpty
-                ? GlassCard(
+                ? AppCard(
                     child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Text('區段: 無資料（請檢查 Firestore ui/segments_v1）', 
@@ -39,19 +41,35 @@ class CategoryPage extends ConsumerWidget {
                       itemBuilder: (_, i) {
                         final s = list[i];
                         final isSel = (selected?.id ?? list.first.id) == s.id;
-                        return InkWell(
-                          onTap: () => ref.read(selectedSegmentProvider.notifier).state = s,
-                          child: GlassCard(
-                            radius: 999,
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                            child: Text(s.title, style: TextStyle(fontWeight: isSel ? FontWeight.w800 : FontWeight.w500)),
-                          ),
+                        return Builder(
+                          builder: (context) {
+                            final tokens = context.tokens;
+                            return InkWell(
+                              onTap: () => ref.read(selectedSegmentProvider.notifier).state = s,
+                              borderRadius: BorderRadius.circular(999),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(999),
+                                  color: isSel ? tokens.primary.withOpacity(0.2) : tokens.chipBg,
+                                  border: Border.all(color: isSel ? tokens.primary : tokens.cardBorder),
+                                ),
+                                child: Text(
+                                  s.title,
+                                  style: TextStyle(
+                                    fontWeight: isSel ? FontWeight.w800 : FontWeight.w500,
+                                    color: isSel ? tokens.primary : tokens.textPrimary,
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
                         );
                       },
                     ),
                   ),
             loading: () => const SizedBox(height: 46, child: Center(child: CircularProgressIndicator())),
-            error: (err, stack) => GlassCard(
+            error: (err, stack) => AppCard(
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -60,7 +78,7 @@ class CategoryPage extends ConsumerWidget {
                     Text('區段錯誤:', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
                     Text('$err', 
-                      style: TextStyle(color: Colors.red, fontSize: 12),
+                      style: const TextStyle(color: Colors.red, fontSize: 12),
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -74,7 +92,7 @@ class CategoryPage extends ConsumerWidget {
 
           topics.when(
             data: (ts) => ts.isEmpty
-                ? GlassCard(
+                ? AppCard(
                     child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Text('主題: 無資料（請檢查 Firestore topics）', 
@@ -95,7 +113,7 @@ class CategoryPage extends ConsumerWidget {
               padding: EdgeInsets.symmetric(vertical: 24),
               child: Center(child: CircularProgressIndicator()),
             ),
-            error: (err, stack) => GlassCard(
+            error: (err, stack) => AppCard(
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -104,7 +122,7 @@ class CategoryPage extends ConsumerWidget {
                     Text('主題錯誤:', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
                     Text('$err', 
-                      style: TextStyle(color: Colors.red, fontSize: 12),
+                      style: const TextStyle(color: Colors.red, fontSize: 12),
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                     ),

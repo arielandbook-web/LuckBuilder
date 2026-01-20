@@ -1,0 +1,1 @@
+enum AppThemeId { darkNeon, whiteMint }
