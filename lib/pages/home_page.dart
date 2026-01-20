@@ -249,12 +249,15 @@ class _Rail extends StatelessWidget {
                           padding: const EdgeInsets.all(12),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(p.title, maxLines: 2, overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-                              const SizedBox(height: 6),
+                              Flexible(
+                                child: Text(p.title, maxLines: 2, overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                              ),
+                              const SizedBox(height: 4),
                               Text('${p.topicId} · ${p.level}', style: TextStyle(color: Colors.black.withValues(alpha: 0.55))),
-                              const Spacer(),
+                              const SizedBox(height: 4),
                               const Align(alignment: Alignment.bottomRight, child: Text('訂閱解鎖')),
                             ],
                           ),
