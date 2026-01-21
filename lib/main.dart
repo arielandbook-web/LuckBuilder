@@ -16,7 +16,7 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
   await TimezoneInit.ensureInitialized(); // ✅ 必加
-  
+
   // 自動匿名登入（如果尚未登入）
   final auth = FirebaseAuth.instance;
   if (auth.currentUser == null) {
@@ -30,11 +30,11 @@ void main() async {
   } else {
     debugPrint('用戶已登入: uid=${auth.currentUser?.uid}');
   }
-  
+
   // 初始化主題控制器
   final themeController = ThemeController();
   await themeController.init();
-  
+
   runApp(ProviderScope(child: MyApp(themeController: themeController)));
 }
 

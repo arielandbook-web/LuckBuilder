@@ -15,9 +15,16 @@ class AppTokens extends ThemeExtension<AppTokens> {
   final Color cardBorder;
   final double cardRadius;
   final List<BoxShadow> cardShadow;
+  final Gradient? cardGradient;
 
   final Color chipBg;
+  final Gradient? chipGradient;
+
   final Color navBg;
+  final Gradient? navGradient;
+
+  final Gradient? buttonGradient;
+  final Gradient? searchBarGradient;
 
   /// Dark: glass blur > 0; White: blur can be 0 (still fine if you keep blur)
   final double glassBlurSigma;
@@ -32,8 +39,13 @@ class AppTokens extends ThemeExtension<AppTokens> {
     required this.cardBorder,
     required this.cardRadius,
     required this.cardShadow,
+    this.cardGradient,
     required this.chipBg,
+    this.chipGradient,
     required this.navBg,
+    this.navGradient,
+    this.buttonGradient,
+    this.searchBarGradient,
     required this.glassBlurSigma,
   });
 
@@ -48,8 +60,13 @@ class AppTokens extends ThemeExtension<AppTokens> {
     Color? cardBorder,
     double? cardRadius,
     List<BoxShadow>? cardShadow,
+    Gradient? cardGradient,
     Color? chipBg,
+    Gradient? chipGradient,
     Color? navBg,
+    Gradient? navGradient,
+    Gradient? buttonGradient,
+    Gradient? searchBarGradient,
     double? glassBlurSigma,
   }) {
     return AppTokens(
@@ -62,8 +79,13 @@ class AppTokens extends ThemeExtension<AppTokens> {
       cardBorder: cardBorder ?? this.cardBorder,
       cardRadius: cardRadius ?? this.cardRadius,
       cardShadow: cardShadow ?? this.cardShadow,
+      cardGradient: cardGradient ?? this.cardGradient,
       chipBg: chipBg ?? this.chipBg,
+      chipGradient: chipGradient ?? this.chipGradient,
       navBg: navBg ?? this.navBg,
+      navGradient: navGradient ?? this.navGradient,
+      buttonGradient: buttonGradient ?? this.buttonGradient,
+      searchBarGradient: searchBarGradient ?? this.searchBarGradient,
       glassBlurSigma: glassBlurSigma ?? this.glassBlurSigma,
     );
   }
@@ -81,8 +103,13 @@ class AppTokens extends ThemeExtension<AppTokens> {
       cardBorder: Color.lerp(cardBorder, other.cardBorder, t)!,
       cardRadius: lerpDouble(cardRadius, other.cardRadius, t)!,
       cardShadow: t < 0.5 ? cardShadow : other.cardShadow,
+      cardGradient: t < 0.5 ? cardGradient : other.cardGradient,
       chipBg: Color.lerp(chipBg, other.chipBg, t)!,
+      chipGradient: t < 0.5 ? chipGradient : other.chipGradient,
       navBg: Color.lerp(navBg, other.navBg, t)!,
+      navGradient: t < 0.5 ? navGradient : other.navGradient,
+      buttonGradient: t < 0.5 ? buttonGradient : other.buttonGradient,
+      searchBarGradient: t < 0.5 ? searchBarGradient : other.searchBarGradient,
       glassBlurSigma: lerpDouble(glassBlurSigma, other.glassBlurSigma, t)!,
     );
   }

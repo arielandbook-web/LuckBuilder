@@ -1,20 +1,26 @@
 import 'dart:convert';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
+import 'scheduled_push_cache.dart';
 
 class NotificationService {
   static final NotificationService _i = NotificationService._();
   factory NotificationService() => _i;
   NotificationService._();
 
-  final FlutterLocalNotificationsPlugin plugin = FlutterLocalNotificationsPlugin();
+  final _cache = ScheduledPushCache();
+
+  final FlutterLocalNotificationsPlugin plugin =
+      FlutterLocalNotificationsPlugin();
 
   static const String actionFavorite = 'ACTION_FAVORITE';
   static const String actionLearned = 'ACTION_LEARNED';
   static const String actionSnooze = 'ACTION_SNOOZE';
   static const String actionDisableProduct = 'ACTION_DISABLE_PRODUCT';
 
-  Future<void> init({required void Function(String? payload, String? actionId) onSelect}) async {
+  Future<void> init(
+      {required void Function(String? payload, String? actionId)
+          onSelect}) async {
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
 
     final iosInit = DarwinInitializationSettings(
@@ -34,16 +40,19 @@ class NotificationService {
       ],
     );
 
-    final initSettings = InitializationSettings(android: androidInit, iOS: iosInit);
+    final initSettings =
+        InitializationSettings(android: androidInit, iOS: iosInit);
 
     await plugin.initialize(
       initSettings,
-      onDidReceiveNotificationResponse: (resp) => onSelect(resp.payload, resp.actionId),
+      onDidReceiveNotificationResponse: (resp) =>
+          onSelect(resp.payload, resp.actionId),
       onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
     );
 
     await plugin
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
         ?.requestNotificationsPermission();
   }
 
@@ -52,7 +61,10 @@ class NotificationService {
     // optional
   }
 
-  Future<void> cancelAll() => plugin.cancelAll();
+  Future<void> cancelAll() async {
+    await plugin.cancelAll();
+    await _cache.clear();
+  }
 
   Future<void> schedule({
     required int id,
@@ -91,8 +103,17 @@ class NotificationService {
       NotificationDetails(android: androidDetails, iOS: iosDetails),
       payload: jsonEncode(payload),
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
       matchDateTimeComponents: null,
     );
+
+    // 同步更新 cache
+    await _cache.add(ScheduledPushEntry(
+      when: when,
+      title: title,
+      body: body,
+      payload: payload,
+    ));
   }
 }

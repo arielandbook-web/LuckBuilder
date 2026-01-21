@@ -51,17 +51,20 @@ class _BubbleBootstrapperState extends ConsumerState<BubbleBootstrapper> {
         await repo.setSavedItem(uid, cid, {'learned': true});
       } else if (actionId == NotificationService.actionSnooze && cid != null) {
         await repo.setSavedItem(uid, cid, {'reviewLater': true});
-      } else if (actionId == NotificationService.actionDisableProduct && pid != null) {
+      } else if (actionId == NotificationService.actionDisableProduct &&
+          pid != null) {
         await repo.setPushEnabled(uid, pid, false);
       }
 
       // 點通知本體：跳轉
       if (!mounted) return;
       if (cid != null) {
-        Navigator.of(context).push(MaterialPageRoute(builder: (_) => DetailPage(contentItemId: cid)));
+        Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => DetailPage(contentItemId: cid)));
       } else if (pid != null) {
         Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => ProductLibraryPage(productId: pid, isWishlistPreview: false),
+          builder: (_) =>
+              ProductLibraryPage(productId: pid, isWishlistPreview: false),
         ));
       }
 

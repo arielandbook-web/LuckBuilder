@@ -36,11 +36,14 @@ class PushScheduler {
 
   static List<TimeOfDay> _resolveTimes(PushConfig cfg) {
     if (cfg.timeMode == PushTimeMode.custom && cfg.customTimes.isNotEmpty) {
-      final list = List<TimeOfDay>.from(cfg.customTimes)..sort((a, b) => _todToMin(a).compareTo(_todToMin(b)));
+      final list = List<TimeOfDay>.from(cfg.customTimes)
+        ..sort((a, b) => _todToMin(a).compareTo(_todToMin(b)));
       return list.take(5).toList();
     }
     final slots = cfg.presetSlots.isEmpty ? ['night'] : cfg.presetSlots;
-    final list = slots.map((s) => presetSlotTimes[s] ?? presetSlotTimes['night']!).toList()
+    final list = slots
+        .map((s) => presetSlotTimes[s] ?? presetSlotTimes['night']!)
+        .toList()
       ..sort((a, b) => _todToMin(a).compareTo(_todToMin(b)));
     return list.take(5).toList();
   }
@@ -76,7 +79,8 @@ class PushScheduler {
     return g.daysOfWeek.contains(w) && p.daysOfWeek.contains(w);
   }
 
-  static List<DateTime> _enforceMinInterval(List<DateTime> dt, int minIntervalMinutes) {
+  static List<DateTime> _enforceMinInterval(
+      List<DateTime> dt, int minIntervalMinutes) {
     if (dt.length <= 1) return dt;
     final out = <DateTime>[];
     DateTime? last;
@@ -118,7 +122,9 @@ class PushScheduler {
 
     if (mode == PushContentMode.preferSaved) {
       return itemsSorted.firstWhere(
-        (e) => (savedMap[e.id]?.favorite ?? false) || (savedMap[e.id]?.reviewLater ?? false),
+        (e) =>
+            (savedMap[e.id]?.favorite ?? false) ||
+            (savedMap[e.id]?.reviewLater ?? false),
         orElse: () => bySeq(progress.nextSeq) ?? itemsSorted.first,
       );
     }
@@ -134,7 +140,9 @@ class PushScheduler {
     final r = Random();
     if (r.nextDouble() < 0.3) {
       return itemsSorted.firstWhere(
-        (e) => (savedMap[e.id]?.reviewLater ?? false) || (savedMap[e.id]?.favorite ?? false),
+        (e) =>
+            (savedMap[e.id]?.reviewLater ?? false) ||
+            (savedMap[e.id]?.favorite ?? false),
         orElse: () => bySeq(progress.nextSeq) ?? itemsSorted.first,
       );
     }
@@ -177,10 +185,14 @@ class PushScheduler {
         if (filtered.isEmpty) continue;
 
         final dts = filtered.map((t) => _at(date, t)).toList()..sort();
-        final enforced = _enforceMinInterval(dts, lp.pushConfig.minIntervalMinutes).take(5).toList();
+        final enforced =
+            _enforceMinInterval(dts, lp.pushConfig.minIntervalMinutes)
+                .take(5)
+                .toList();
 
-        final items = List<ContentItem>.from(contentByProduct[lp.productId] ?? const [])
-          ..sort((a, b) => a.seq.compareTo(b.seq));
+        final items =
+            List<ContentItem>.from(contentByProduct[lp.productId] ?? const [])
+              ..sort((a, b) => a.seq.compareTo(b.seq));
 
         final picked = _pickItem(
           itemsSorted: items,
@@ -191,8 +203,10 @@ class PushScheduler {
         if (picked == null) continue;
 
         for (final when in enforced) {
-          if (di == 0 && when.isBefore(now.add(const Duration(minutes: 1)))) continue;
-          dayCandidates.add(PushTask(productId: lp.productId, when: when, item: picked));
+          if (di == 0 && when.isBefore(now.add(const Duration(minutes: 1))))
+            continue;
+          dayCandidates
+              .add(PushTask(productId: lp.productId, when: when, item: picked));
         }
       }
 
@@ -218,7 +232,8 @@ class PushScheduler {
           return a.when.compareTo(b.when);
         });
 
-        final kept = dayCandidates.take(dailyCap).toList()..sort((a, b) => a.when.compareTo(b.when));
+        final kept = dayCandidates.take(dailyCap).toList()
+          ..sort((a, b) => a.when.compareTo(b.when));
         tasks.addAll(kept);
       } else {
         tasks.addAll(dayCandidates);

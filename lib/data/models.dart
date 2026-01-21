@@ -16,13 +16,13 @@ class Segment {
   });
 
   factory Segment.fromMap(Map<String, dynamic> m) => Segment(
-    id: m['id'] ?? '',
-    title: m['title'] ?? '',
-    order: (m['order'] ?? 0) as int,
-    mode: m['mode'] ?? 'all',
-    tag: m['tag'],
-    published: (m['published'] ?? true) as bool,
-  );
+        id: m['id'] ?? '',
+        title: m['title'] ?? '',
+        order: (m['order'] ?? 0) as int,
+        mode: m['mode'] ?? 'all',
+        tag: m['tag'],
+        published: (m['published'] ?? true) as bool,
+      );
 }
 
 class Topic {
@@ -43,13 +43,13 @@ class Topic {
   });
 
   factory Topic.fromDoc(String id, Map<String, dynamic> m) => Topic(
-    id: id,
-    title: m['title'] ?? '',
-    published: (m['published'] ?? true) as bool,
-    order: (m['order'] ?? 0) as int,
-    tags: List<String>.from(m['tags'] ?? const []),
-    bubbleImageUrl: m['bubbleImageUrl'],
-  );
+        id: id,
+        title: m['title'] ?? '',
+        published: (m['published'] ?? true) as bool,
+        order: (m['order'] ?? 0) as int,
+        tags: List<String>.from(m['tags'] ?? const []),
+        bubbleImageUrl: m['bubbleImageUrl'],
+      );
 }
 
 class FeaturedList {
@@ -67,13 +67,14 @@ class FeaturedList {
     required this.productIds,
   });
 
-  factory FeaturedList.fromDoc(String id, Map<String, dynamic> m) => FeaturedList(
-    id: id,
-    title: m['title'] ?? '',
-    published: (m['published'] ?? true) as bool,
-    order: (m['order'] ?? 0) as int,
-    productIds: List<String>.from(m['productIds'] ?? const []),
-  );
+  factory FeaturedList.fromDoc(String id, Map<String, dynamic> m) =>
+      FeaturedList(
+        id: id,
+        title: m['title'] ?? '',
+        published: (m['published'] ?? true) as bool,
+        order: (m['order'] ?? 0) as int,
+        productIds: List<String>.from(m['productIds'] ?? const []),
+      );
 }
 
 class Product {
@@ -111,20 +112,20 @@ class Product {
   });
 
   factory Product.fromDoc(String id, Map<String, dynamic> m) => Product(
-    id: id,
-    title: m['title'] ?? '',
-    topicId: m['topicId'] ?? '',
-    level: m['level'] ?? 'L1',
-    published: (m['published'] ?? true) as bool,
-    coverImageUrl: m['coverImageUrl'],
-    levelGoal: m['levelGoal'],
-    levelBenefit: m['levelBenefit'],
-    spec1Label: m['spec1Label'],
-    spec2Label: m['spec2Label'],
-    spec3Label: m['spec3Label'],
-    spec4Label: m['spec4Label'],
-    trialLimit: (m['trialLimit'] ?? 3) as int,
-  );
+        id: id,
+        title: m['title'] ?? '',
+        topicId: m['topicId'] ?? '',
+        level: m['level'] ?? 'L1',
+        published: (m['published'] ?? true) as bool,
+        coverImageUrl: m['coverImageUrl'],
+        levelGoal: m['levelGoal'],
+        levelBenefit: m['levelBenefit'],
+        spec1Label: m['spec1Label'],
+        spec2Label: m['spec2Label'],
+        spec3Label: m['spec3Label'],
+        spec4Label: m['spec4Label'],
+        trialLimit: (m['trialLimit'] ?? 3) as int,
+      );
 }
 
 class ContentItem {
@@ -149,13 +150,13 @@ class ContentItem {
   });
 
   factory ContentItem.fromDoc(String id, Map<String, dynamic> m) => ContentItem(
-    id: id,
-    productId: m['productId'] ?? '',
-    anchor: m['anchor'] ?? '',
-    content: m['content'] ?? '',
-    intent: m['intent'] ?? '',
-    difficulty: (m['difficulty'] ?? 1) as int,
-    seq: (m['seq'] ?? 0) as int,
-    isPreview: (m['isPreview'] ?? false) as bool,
-  );
+        id: id,
+        productId: m['productId'] ?? '',
+        anchor: m['anchor'] ?? '',
+        content: m['content'] ?? '',
+        intent: m['intent'] ?? '',
+        difficulty: (m['difficulty'] ?? 1) as int,
+        seq: (m['seq'] ?? 0) as int,
+        isPreview: (m['isPreview'] ?? false) as bool,
+      );
 }

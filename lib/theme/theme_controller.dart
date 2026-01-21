@@ -28,6 +28,8 @@ class ThemeController extends ChangeNotifier {
   }
 
   Future<void> toggle() async {
-    await setTheme(_id == AppThemeId.darkNeon ? AppThemeId.whiteMint : AppThemeId.darkNeon);
+    await setTheme(_id == AppThemeId.darkNeon
+        ? AppThemeId.whiteMint
+        : AppThemeId.darkNeon);
   }
 }

@@ -12,8 +12,10 @@ import '../models/content_item.dart';
 import '../models/user_library.dart';
 import '../models/global_push_settings.dart';
 
-final firebaseAuthProvider = Provider<FirebaseAuth>((ref) => FirebaseAuth.instance);
-final firestoreProvider = Provider<FirebaseFirestore>((ref) => FirebaseFirestore.instance);
+final firebaseAuthProvider =
+    Provider<FirebaseAuth>((ref) => FirebaseAuth.instance);
+final firestoreProvider =
+    Provider<FirebaseFirestore>((ref) => FirebaseFirestore.instance);
 
 final uidProvider = Provider<String>((ref) {
   final u = ref.watch(firebaseAuthProvider).currentUser;
@@ -21,10 +23,14 @@ final uidProvider = Provider<String>((ref) {
   return u.uid;
 });
 
-final productRepoProvider = Provider<ProductRepo>((ref) => ProductRepo(ref.watch(firestoreProvider)));
-final contentRepoProvider = Provider<ContentRepo>((ref) => ContentRepo(ref.watch(firestoreProvider)));
-final libraryRepoProvider = Provider<LibraryRepo>((ref) => LibraryRepo(ref.watch(firestoreProvider)));
-final pushSettingsRepoProvider = Provider<PushSettingsRepo>((ref) => PushSettingsRepo(ref.watch(firestoreProvider)));
+final productRepoProvider =
+    Provider<ProductRepo>((ref) => ProductRepo(ref.watch(firestoreProvider)));
+final contentRepoProvider =
+    Provider<ContentRepo>((ref) => ContentRepo(ref.watch(firestoreProvider)));
+final libraryRepoProvider =
+    Provider<LibraryRepo>((ref) => LibraryRepo(ref.watch(firestoreProvider)));
+final pushSettingsRepoProvider = Provider<PushSettingsRepo>(
+    (ref) => PushSettingsRepo(ref.watch(firestoreProvider)));
 
 final productsMapProvider = FutureProvider<Map<String, Product>>((ref) async {
   return ref.read(productRepoProvider).getAll();
@@ -50,10 +56,12 @@ final globalPushSettingsProvider = StreamProvider<GlobalPushSettings>((ref) {
   return ref.read(pushSettingsRepoProvider).watchGlobal(uid);
 });
 
-final contentByProductProvider = FutureProvider.family<List<ContentItem>, String>((ref, productId) async {
+final contentByProductProvider =
+    FutureProvider.family<List<ContentItem>, String>((ref, productId) async {
   return ref.read(contentRepoProvider).getByProduct(productId);
 });
 
-final contentItemProvider = FutureProvider.family<ContentItem, String>((ref, contentItemId) async {
+final contentItemProvider =
+    FutureProvider.family<ContentItem, String>((ref, contentItemId) async {
   return ref.read(contentRepoProvider).getOne(contentItemId);
 });

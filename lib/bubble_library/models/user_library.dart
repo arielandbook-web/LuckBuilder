@@ -7,9 +7,11 @@ class ProgressState {
 
   const ProgressState({required this.nextSeq, required this.learnedCount});
 
-  static ProgressState defaults() => const ProgressState(nextSeq: 1, learnedCount: 0);
+  static ProgressState defaults() =>
+      const ProgressState(nextSeq: 1, learnedCount: 0);
 
-  Map<String, dynamic> toMap() => {'nextSeq': nextSeq, 'learnedCount': learnedCount};
+  Map<String, dynamic> toMap() =>
+      {'nextSeq': nextSeq, 'learnedCount': learnedCount};
 
   factory ProgressState.fromMap(Map<String, dynamic>? m) {
     if (m == null) return ProgressState.defaults();
@@ -19,16 +21,17 @@ class ProgressState {
     );
   }
 
-  ProgressState copyWith({int? nextSeq, int? learnedCount}) =>
-      ProgressState(nextSeq: nextSeq ?? this.nextSeq, learnedCount: learnedCount ?? this.learnedCount);
+  ProgressState copyWith({int? nextSeq, int? learnedCount}) => ProgressState(
+      nextSeq: nextSeq ?? this.nextSeq,
+      learnedCount: learnedCount ?? this.learnedCount);
 }
 
 class UserLibraryProduct {
   final String productId;
   final DateTime purchasedAt;
   final bool isFavorite;
-  final bool isHidden;     // 刪除=隱藏
-  final bool pushEnabled;  // 推播中
+  final bool isHidden; // 刪除=隱藏
+  final bool pushEnabled; // 推播中
   final ProgressState progress;
   final DateTime? lastOpenedAt;
   final PushConfig pushConfig;
@@ -53,9 +56,11 @@ class UserLibraryProduct {
       isFavorite: (m['isFavorite'] ?? false) as bool,
       isHidden: (m['isHidden'] ?? false) as bool,
       pushEnabled: (m['pushEnabled'] ?? false) as bool,
-      progress: ProgressState.fromMap((m['progress'] as Map?)?.cast<String, dynamic>()),
+      progress: ProgressState.fromMap(
+          (m['progress'] as Map?)?.cast<String, dynamic>()),
       lastOpenedAt: last?.toDate(),
-      pushConfig: PushConfig.fromMap((m['pushConfig'] as Map?)?.cast<String, dynamic>()),
+      pushConfig: PushConfig.fromMap(
+          (m['pushConfig'] as Map?)?.cast<String, dynamic>()),
     );
   }
 
@@ -66,7 +71,8 @@ class UserLibraryProduct {
         'isHidden': isHidden,
         'pushEnabled': pushEnabled,
         'progress': progress.toMap(),
-        'lastOpenedAt': lastOpenedAt == null ? null : Timestamp.fromDate(lastOpenedAt!),
+        'lastOpenedAt':
+            lastOpenedAt == null ? null : Timestamp.fromDate(lastOpenedAt!),
         'pushConfig': pushConfig.toMap(),
       };
 
@@ -125,7 +131,8 @@ class SavedContent {
     required this.reviewLater,
   });
 
-  factory SavedContent.fromMap(String id, Map<String, dynamic> m) => SavedContent(
+  factory SavedContent.fromMap(String id, Map<String, dynamic> m) =>
+      SavedContent(
         contentItemId: id,
         favorite: (m['favorite'] ?? false) as bool,
         learned: (m['learned'] ?? false) as bool,

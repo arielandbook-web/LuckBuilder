@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,8 +7,10 @@ import '../models/content_item.dart';
 import '../models/user_library.dart';
 import 'detail_page.dart';
 import 'widgets/bubble_card.dart';
+import '../../../theme/app_tokens.dart';
+import '../../widgets/rich_sections/user_learning_store.dart';
 
-class ProductLibraryPage extends ConsumerWidget {
+class ProductLibraryPage extends ConsumerStatefulWidget {
   final String productId;
   final bool isWishlistPreview;
 
@@ -18,21 +21,43 @@ class ProductLibraryPage extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ProductLibraryPage> createState() => _ProductLibraryPageState();
+}
+
+class _ProductLibraryPageState extends ConsumerState<ProductLibraryPage> {
+  @override
+  void initState() {
+    super.initState();
+    // 保底記錄：進入內容頁就記一次學習
+    unawaited(UserLearningStore().markLearnedTodayAndGlobal(widget.productId));
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final productsAsync = ref.watch(productsMapProvider);
-    final contentsAsync = ref.watch(contentByProductProvider(productId));
+    final contentsAsync = ref.watch(contentByProductProvider(widget.productId));
     final savedAsync = ref.watch(savedItemsProvider);
+    final tokens = context.tokens;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('內容卡片')),
+      backgroundColor: tokens.bg,
+      appBar: AppBar(
+        title: const Text('內容卡片'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+      ),
       body: productsAsync.when(
         data: (productsMap) {
-          final product = productsMap[productId];
-          if (product == null) return const Center(child: Text('Product not found'));
+          final product = productsMap[widget.productId];
+          if (product == null) {
+            return const Center(child: Text('Product not found'));
+          }
 
           return contentsAsync.when(
             data: (items) {
-              final showItems = isWishlistPreview ? items.take(product.trialLimit).toList() : items;
+              final showItems = widget.isWishlistPreview
+                  ? items.take(product.trialLimit).toList()
+                  : items;
 
               return savedAsync.when(
                 data: (savedMap) {
@@ -48,12 +73,17 @@ class ProductLibraryPage extends ConsumerWidget {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(product.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                                  Text(product.title,
+                                      style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w900)),
                                   const SizedBox(height: 6),
                                   Wrap(
                                     spacing: 8,
                                     children: [
-                                      _chip(isWishlistPreview ? '試讀模式' : '泡泡庫'),
+                                      _chip(widget.isWishlistPreview
+                                          ? '試讀模式'
+                                          : '泡泡庫'),
                                       _chip('卡片 ${showItems.length}'),
                                     ],
                                   ),
@@ -70,7 +100,9 @@ class ProductLibraryPage extends ConsumerWidget {
                           padding: const EdgeInsets.only(bottom: 10),
                           child: BubbleCard(
                             onTap: () => Navigator.of(context).push(
-                              MaterialPageRoute(builder: (_) => DetailPage(contentItemId: it.id)),
+                              MaterialPageRoute(
+                                  builder: (_) =>
+                                      DetailPage(contentItemId: it.id)),
                             ),
                             child: _contentCard(ref, it, saved),
                           ),
@@ -101,10 +133,11 @@ class ProductLibraryPage extends ConsumerWidget {
     } catch (_) {
       return const Center(child: Text('請先登入'));
     }
-    
+
     final repo = ref.read(libraryRepoProvider);
 
-    String ellipsize(String s, int max) => s.length <= max ? s : '${s.substring(0, max)}…';
+    String ellipsize(String s, int max) =>
+        s.length <= max ? s : '${s.substring(0, max)}…';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -115,15 +148,21 @@ class ProductLibraryPage extends ConsumerWidget {
             Expanded(
               child: Text(
                 it.anchorGroup,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
               ),
             ),
-            Text(
-              'Day ${it.pushOrder}',
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.6),
-                fontSize: 12,
-              ),
+            Builder(
+              builder: (context) {
+                final tokens = context.tokens;
+                return Text(
+                  'Day ${it.pushOrder}',
+                  style: TextStyle(
+                    color: tokens.textSecondary,
+                    fontSize: 12,
+                  ),
+                );
+              },
             ),
           ],
         ),
@@ -141,18 +180,26 @@ class ProductLibraryPage extends ConsumerWidget {
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
             IconButton(
-              icon: Icon((saved?.learned ?? false) ? Icons.check_circle : Icons.check_circle_outline),
-              onPressed: () => repo.setSavedItem(uid!, it.id, {'learned': !(saved?.learned ?? false)}),
+              icon: Icon((saved?.learned ?? false)
+                  ? Icons.check_circle
+                  : Icons.check_circle_outline),
+              onPressed: () => repo.setSavedItem(
+                  uid!, it.id, {'learned': !(saved?.learned ?? false)}),
               tooltip: '我學會了',
             ),
             IconButton(
-              icon: Icon((saved?.favorite ?? false) ? Icons.star : Icons.star_border),
-              onPressed: () => repo.setSavedItem(uid!, it.id, {'favorite': !(saved?.favorite ?? false)}),
+              icon: Icon(
+                  (saved?.favorite ?? false) ? Icons.star : Icons.star_border),
+              onPressed: () => repo.setSavedItem(
+                  uid!, it.id, {'favorite': !(saved?.favorite ?? false)}),
               tooltip: '收藏',
             ),
             IconButton(
-              icon: Icon((saved?.reviewLater ?? false) ? Icons.schedule : Icons.schedule_outlined),
-              onPressed: () => repo.setSavedItem(uid!, it.id, {'reviewLater': !(saved?.reviewLater ?? false)}),
+              icon: Icon((saved?.reviewLater ?? false)
+                  ? Icons.schedule
+                  : Icons.schedule_outlined),
+              onPressed: () => repo.setSavedItem(
+                  uid!, it.id, {'reviewLater': !(saved?.reviewLater ?? false)}),
               tooltip: '稍後',
             ),
           ],
@@ -161,23 +208,25 @@ class ProductLibraryPage extends ConsumerWidget {
     );
   }
 
-  Widget _chip(String text) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.10),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: Colors.white.withOpacity(0.12)),
-        ),
-        child: Text(text, style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 12)),
-      );
-
-  Widget _miniChip(String text) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: Colors.white.withOpacity(0.12)),
-        ),
-        child: Text(text, style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 12)),
+  Widget _chip(String text) => Builder(
+        builder: (context) {
+          final tokens = context.tokens;
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              gradient: tokens.chipGradient,
+              color: tokens.chipGradient == null ? tokens.chipBg : null,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: tokens.cardBorder),
+            ),
+            child: Text(
+              text,
+              style: TextStyle(
+                  color: tokens.textPrimary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600),
+            ),
+          );
+        },
       );
 }

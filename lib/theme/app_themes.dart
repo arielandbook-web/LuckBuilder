@@ -40,8 +40,49 @@ class AppThemes {
           offset: Offset(0, 12),
         ),
       ],
+      cardGradient: const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Color.fromRGBO(255, 255, 255, 0.12),
+          Color.fromRGBO(46, 242, 225, 0.08),
+          Color.fromRGBO(255, 255, 255, 0.08),
+        ],
+      ),
       chipBg: const Color.fromRGBO(255, 255, 255, 0.08),
+      chipGradient: const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Color.fromRGBO(46, 242, 225, 0.15),
+          Color.fromRGBO(255, 255, 255, 0.08),
+        ],
+      ),
       navBg: const Color.fromRGBO(20, 24, 44, 0.72),
+      navGradient: const LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          Color.fromRGBO(20, 24, 44, 0.85),
+          Color.fromRGBO(11, 14, 26, 0.95),
+        ],
+      ),
+      buttonGradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          primary,
+          primary.withValues(alpha: 0.8),
+        ],
+      ),
+      searchBarGradient: const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Color.fromRGBO(255, 255, 255, 0.12),
+          Color.fromRGBO(255, 255, 255, 0.08),
+        ],
+      ),
       glassBlurSigma: 18,
     );
 
@@ -68,11 +109,13 @@ class AppThemes {
         hintStyle: const TextStyle(color: Color.fromRGBO(255, 255, 255, 0.60)),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide: const BorderSide(color: Color.fromRGBO(255, 255, 255, 0.14)),
+          borderSide:
+              const BorderSide(color: Color.fromRGBO(255, 255, 255, 0.14)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide: const BorderSide(color: Color.fromRGBO(255, 255, 255, 0.14)),
+          borderSide:
+              const BorderSide(color: Color.fromRGBO(255, 255, 255, 0.14)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
@@ -108,8 +151,48 @@ class AppThemes {
           offset: Offset(0, 10),
         ),
       ],
+      cardGradient: const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Color(0xFFFFFFFF),
+          Color(0xFFF8FCFC),
+        ],
+      ),
       chipBg: const Color(0xFFF5F7FB),
+      chipGradient: const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Color(0xFFF5F7FB),
+          Color(0xFFE8F5F3),
+        ],
+      ),
       navBg: const Color.fromRGBO(255, 255, 255, 0.92),
+      navGradient: const LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          Color.fromRGBO(255, 255, 255, 0.98),
+          Color.fromRGBO(255, 255, 255, 0.95),
+        ],
+      ),
+      buttonGradient: const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          primary,
+          Color(0xFF1FB8A8),
+        ],
+      ),
+      searchBarGradient: const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Color(0xFFF8F9FA),
+          Color(0xFFF0F2F5),
+        ],
+      ),
       glassBlurSigma: 10,
     );
 

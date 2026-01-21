@@ -16,7 +16,8 @@ class ContentRepo {
   }
 
   Future<ContentItem> getOne(String id) async {
-    final doc = await _db.collection(FirestorePaths.contentItems()).doc(id).get();
+    final doc =
+        await _db.collection(FirestorePaths.contentItems()).doc(id).get();
     final data = doc.data();
     if (data == null) throw StateError('content_item not found: $id');
     return ContentItem.fromMap(doc.id, data);

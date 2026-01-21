@@ -4,13 +4,28 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/providers.dart';
 import '../models/product.dart';
-import '../models/user_library.dart';
 import '../models/push_config.dart';
 import '../notifications/push_orchestrator.dart';
+import '../notifications/scheduled_push_cache.dart';
 import 'product_library_page.dart';
 import 'push_center_page.dart';
 import 'push_product_config_page.dart';
-import 'widgets/bubble_card.dart';
+import '../../widgets/rich_sections/sections/library_rich_card.dart';
+import '../../widgets/rich_sections/user_learning_store.dart';
+import '../../../theme/app_tokens.dart';
+
+/// 讀取本機快取的未來 3 天推播排程（不依賴 Firestore）
+final _scheduledCacheProvider =
+    FutureProvider<List<ScheduledPushEntry>>((ref) async {
+  return ScheduledPushCache()
+      .loadSortedUpcoming(horizon: const Duration(days: 3));
+});
+
+/// 本週完成度（過去 7 天含今天）
+final weeklyCountProvider =
+    FutureProvider.family<int, String>((ref, productId) async {
+  return UserLearningStore().weeklyCount(productId);
+});
 
 enum LibraryTab { purchased, wishlist, favorites }
 
@@ -27,7 +42,7 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
   @override
   Widget build(BuildContext context) {
     final productsAsync = ref.watch(productsMapProvider);
-    
+
     // 檢查是否登入，未登入時顯示提示
     String? uid;
     try {
@@ -38,9 +53,10 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
         body: const Center(child: Text('請先登入以使用泡泡庫功能')),
       );
     }
-    
+
     final libAsync = ref.watch(libraryProductsProvider);
     final wishAsync = ref.watch(wishlistProvider);
+    final scheduledAsync = ref.watch(_scheduledCacheProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -54,7 +70,8 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
             ),
           IconButton(
             icon: const Icon(Icons.notifications_active_outlined),
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PushCenterPage())),
+            onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const PushCenterPage())),
           ),
         ],
       ),
@@ -81,161 +98,41 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
                   data: (lib) {
                     return wishAsync.when(
                       data: (wish) {
-                        final visibleLib = lib.where((e) => !e.isHidden && productsMap.containsKey(e.productId)).toList();
-                        final visibleWish = wish.where((e) => productsMap.containsKey(e.productId)).toList();
+                        final visibleLib = lib
+                            .where((e) =>
+                                !e.isHidden &&
+                                productsMap.containsKey(e.productId))
+                            .toList();
+                        final visibleWish = wish
+                            .where((e) => productsMap.containsKey(e.productId))
+                            .toList();
+
+                        // 取得排程快取（純本機，不影響資料流）
+                        final scheduled = scheduledAsync.asData?.value ??
+                            <ScheduledPushEntry>[];
 
                         if (tab == LibraryTab.purchased) {
-                          if (visibleLib.isEmpty) {
-                            return Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.inventory_2_outlined, size: 64, color: Colors.white.withOpacity(0.5)),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    '目前沒有已購買的商品',
-                                    style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 16),
-                                  ),
-                                  if (kDebugMode) ...[
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      '點擊右上角的 🌾 按鈕來建立測試資料',
-                                      style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 14),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            );
-                          }
-                          visibleLib.sort((a, b) => b.purchasedAt.compareTo(a.purchasedAt));
-                          return ListView.separated(
-                            padding: const EdgeInsets.all(12),
-                            itemCount: visibleLib.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 10),
-                            itemBuilder: (_, i) {
-                              final lp = visibleLib[i];
-                              final title = productsMap[lp.productId]!.title;
-                              return BubbleCard(
-                                onTap: () async {
-                                  await ref.read(libraryRepoProvider).touchLastOpened(ref.read(uidProvider), lp.productId);
-                                  // ignore: use_build_context_synchronously
-                                  Navigator.of(context).push(MaterialPageRoute(
-                                    builder: (_) => ProductLibraryPage(productId: lp.productId, isWishlistPreview: false),
-                                  ));
-                                },
-                                child: _purchasedCard(context, lp, title),
-                              );
-                            },
-                          );
+                          return _buildPurchasedTab(
+                              context, visibleLib, productsMap, scheduled);
                         }
 
                         if (tab == LibraryTab.wishlist) {
-                          if (visibleWish.isEmpty) {
-                            return Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.favorite_border, size: 64, color: Colors.white.withOpacity(0.5)),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    '目前沒有願望清單',
-                                    style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 16),
-                                  ),
-                                  if (kDebugMode) ...[
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      '點擊右上角的 🌾 按鈕來建立測試資料',
-                                      style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 14),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            );
-                          }
-                          visibleWish.sort((a, b) => b.addedAt.compareTo(a.addedAt));
-                          return ListView.separated(
-                            padding: const EdgeInsets.all(12),
-                            itemCount: visibleWish.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 10),
-                            itemBuilder: (_, i) {
-                              final w = visibleWish[i];
-                              final title = productsMap[w.productId]!.title;
-                              return BubbleCard(
-                                onTap: () {
-                                  Navigator.of(context).push(MaterialPageRoute(
-                                    builder: (_) => ProductLibraryPage(productId: w.productId, isWishlistPreview: true),
-                                  ));
-                                },
-                                child: _wishlistCard(context, w, title),
-                              );
-                            },
-                          );
+                          return _buildWishlistTab(
+                              context, visibleWish, productsMap);
                         }
 
                         // Favorites
-                        final favPids = <String>{};
-                        for (final lp in visibleLib) {
-                          if (lp.isFavorite) favPids.add(lp.productId);
-                        }
-                        for (final w in visibleWish) {
-                          if (w.isFavorite) favPids.add(w.productId);
-                        }
-
-                        final favList = favPids.toList();
-                        if (favList.isEmpty) {
-                          return Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.star_border, size: 64, color: Colors.white.withOpacity(0.5)),
-                                const SizedBox(height: 16),
-                                Text(
-                                  '目前沒有最愛',
-                                  style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 16),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  '點擊商品旁的 ⭐ 按鈕來加入最愛',
-                                  style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 14),
-                                ),
-                              ],
-                            ),
-                          );
-                        }
-
-                        return ListView.separated(
-                          padding: const EdgeInsets.all(12),
-                          itemCount: favList.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 10),
-                          itemBuilder: (_, i) {
-                            final pid = favList[i];
-                            final title = productsMap[pid]!.title;
-                            final lp = visibleLib.where((e) => e.productId == pid).firstOrNull;
-                            final isPurchased = lp != null;
-
-                            return BubbleCard(
-                              onTap: () {
-                                Navigator.of(context).push(MaterialPageRoute(
-                                  builder: (_) => ProductLibraryPage(productId: pid, isWishlistPreview: !isPurchased),
-                                ));
-                              },
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.star, size: 20),
-                                  const SizedBox(width: 10),
-                                  Expanded(child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
-                                  Text(isPurchased ? '已購買' : '未購買', style: TextStyle(color: Colors.white.withOpacity(0.7))),
-                                ],
-                              ),
-                            );
-                          },
-                        );
+                        return _buildFavoritesTab(context, visibleLib,
+                            visibleWish, productsMap, scheduled);
                       },
-                      loading: () => const Center(child: CircularProgressIndicator()),
-                      error: (e, _) => Center(child: Text('wishlist error: $e')),
+                      loading: () =>
+                          const Center(child: CircularProgressIndicator()),
+                      error: (e, _) =>
+                          Center(child: Text('wishlist error: $e')),
                     );
                   },
-                  loading: () => const Center(child: CircularProgressIndicator()),
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
                   error: (e, _) => Center(child: Text('library error: $e')),
                 );
               },
@@ -248,149 +145,482 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
     );
   }
 
-  Widget _purchasedCard(BuildContext context, UserLibraryProduct lp, String title) {
-    final uid = ref.read(uidProvider);
+  Widget _buildPurchasedTab(
+    BuildContext context,
+    List<dynamic> visibleLib,
+    Map<String, Product> productsMap,
+    List<ScheduledPushEntry> scheduled,
+  ) {
+    // Helper: 根據 productId 找最早的排程項目
+    ScheduledPushEntry? nextEntryFor(String productId) {
+      final list = scheduled
+          .where((s) => s.payload['productId']?.toString() == productId)
+          .toList();
+      if (list.isEmpty) return null;
+      list.sort((a, b) => a.when.compareTo(b.when));
+      return list.first;
+    }
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Icon(Icons.bubble_chart_outlined, size: 26),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800))),
-                  IconButton(
-                    icon: Icon(lp.isFavorite ? Icons.star : Icons.star_border),
-                    onPressed: () async {
-                      await ref.read(libraryRepoProvider).setProductFavorite(uid, lp.productId, !lp.isFavorite);
-                    },
-                  ),
-                  IconButton(
-                    icon: Icon(lp.pushEnabled ? Icons.notifications_active : Icons.notifications_off_outlined),
-                    onPressed: () async {
-                      await ref.read(libraryRepoProvider).setPushEnabled(uid, lp.productId, !lp.pushEnabled);
-                      await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
-                    },
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                children: [
-                  _chip(lp.pushEnabled ? '推播中' : '未推播'),
-                  _chip('Day ${lp.progress.nextSeq}/365'),
-                ],
-              ),
+    String fmtNextTime(DateTime dt) {
+      final hh = dt.hour.toString().padLeft(2, '0');
+      final mm = dt.minute.toString().padLeft(2, '0');
+      return '$hh:$mm';
+    }
+
+    String? extractDayFromBody(String body) {
+      final firstLine = body.split('\n').first;
+      final m = RegExp(r'Day\s+(\d+)/365').firstMatch(firstLine);
+      return m?.group(1);
+    }
+
+    String latestTitleText(ScheduledPushEntry e) {
+      final day = extractDayFromBody(e.body);
+      return day == null ? '下一則：${e.title}' : '下一則：${e.title}（Day $day）';
+    }
+
+    if (visibleLib.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.inventory_2_outlined,
+                size: 64, color: Colors.white.withValues(alpha: 0.5)),
+            const SizedBox(height: 16),
+            Text(
+              '目前沒有已購買的商品',
+              style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.8), fontSize: 16),
+            ),
+            if (kDebugMode) ...[
               const SizedBox(height: 8),
               Text(
-                '購買：${lp.purchasedAt.toLocal().toString().split(".").first}',
-                style: TextStyle(color: Colors.white.withOpacity(0.65), fontSize: 12),
-              ),
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  TextButton.icon(
-                    onPressed: () async {
-                      await ref.read(libraryRepoProvider).hideProduct(uid, lp.productId, true);
-                      await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
-                    },
-                    icon: const Icon(Icons.delete_outline, size: 18),
-                    label: const Text('刪除'),
-                  ),
-                  const SizedBox(width: 8),
-                  TextButton.icon(
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => PushProductConfigPage(productId: lp.productId)),
-                    ),
-                    icon: const Icon(Icons.tune, size: 18),
-                    label: const Text('推播設定'),
-                  ),
-                ],
+                '點擊右上角的 🌾 按鈕來建立測試資料',
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.6), fontSize: 14),
               ),
             ],
-          ),
+          ],
         ),
-      ],
-    );
-  }
-
-  Widget _wishlistCard(BuildContext context, WishlistItem w, String title) {
-    final uid = ref.read(uidProvider);
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Icon(Icons.lock_outline, size: 26),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800))),
-                  IconButton(
-                    icon: Icon(w.isFavorite ? Icons.star : Icons.star_border),
-                    onPressed: () async {
-                      await ref.read(libraryRepoProvider).setProductFavorite(uid, w.productId, !w.isFavorite);
-                    },
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Wrap(spacing: 8, children: [_chip('未購買'), _chip('試讀可用')]),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  ElevatedButton(
-                    onPressed: () async {
-                      // TODO: 在此串接 IAP / RevenueCat 購買流程
-                      // 購買成功後，呼叫以下程式碼將商品加入泡泡庫：
-                      final purchasedProductId = w.productId; // 實際應從 IAP 回傳取得
-                      await ref.read(libraryRepoProvider).ensureLibraryProductExists(
-                        uid: ref.read(uidProvider),
-                        productId: purchasedProductId,
-                        purchasedAt: DateTime.now(),
-                      );
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('購買成功！商品已加入泡泡庫')),
-                        );
-                      }
-                    },
-                    child: const Text('立即購買'),
-                  ),
-                  const SizedBox(width: 10),
-                  OutlinedButton(
-                    onPressed: () async {
-                      await ref.read(libraryRepoProvider).removeWishlist(uid, w.productId);
-                    },
-                    child: const Text('移除收藏'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _chip(String text) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.10),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: Colors.white.withOpacity(0.12)),
-        ),
-        child: Text(text, style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 12)),
       );
+    }
+    visibleLib.sort((a, b) => b.purchasedAt.compareTo(a.purchasedAt));
+    return ListView.separated(
+      padding: const EdgeInsets.all(12),
+      itemCount: visibleLib.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      itemBuilder: (ctx, i) {
+        final lp = visibleLib[i];
+        final product = productsMap[lp.productId]!;
+        final tokens = ctx.tokens;
+        final entry = nextEntryFor(lp.productId);
+
+        // 本週完成度（真資料）
+        final weeklyAsync = ref.watch(weeklyCountProvider(lp.productId));
+        final weeklyText = weeklyAsync.when(
+          data: (c) => '本週完成度：$c/7',
+          loading: () => '本週完成度：…',
+          error: (_, __) => '本週完成度：—',
+        );
+
+        return LibraryRichCard(
+          title: product.title,
+          subtitle: 'Day ${lp.progress.nextSeq}/365',
+          coverImageUrl: null,
+          nextPushText: lp.pushEnabled
+              ? (entry == null
+                  ? '未來 3 天尚未排程'
+                  : '下一則：${fmtNextTime(entry.when)}')
+              : '推播已關閉',
+          weeklyProgress: weeklyText,
+          latestTitle: entry == null ? '下一則：尚未排程' : latestTitleText(entry),
+          headerTrailing: PopupMenuButton<String>(
+            icon: Icon(Icons.more_horiz, color: tokens.textSecondary),
+            onSelected: (v) async {
+              final repo = ref.read(libraryRepoProvider);
+              final uid2 = ref.read(uidProvider);
+              if (v == 'fav') {
+                await repo.setProductFavorite(
+                    uid2, lp.productId, !lp.isFavorite);
+              } else if (v == 'push') {
+                // ignore: use_build_context_synchronously
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) =>
+                      PushProductConfigPage(productId: lp.productId),
+                ));
+              }
+            },
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: 'fav',
+                child: Row(
+                  children: [
+                    Icon(lp.isFavorite ? Icons.star : Icons.star_border),
+                    const SizedBox(width: 10),
+                    Text(lp.isFavorite ? '移除最愛' : '加入最愛'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'push',
+                child: Row(
+                  children: [
+                    Icon(Icons.notifications_active_outlined),
+                    SizedBox(width: 10),
+                    Text('推播設定'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          onLearnNow: () async {
+            await UserLearningStore().markLearnedTodayAndGlobal(lp.productId);
+            ref.invalidate(weeklyCountProvider(lp.productId));
+            // ignore: use_build_context_synchronously
+            ScaffoldMessenger.of(context)
+                .showSnackBar(const SnackBar(content: Text('已記錄：今天完成 1 次學習')));
+          },
+          onMakeUpToday: () {
+            ScaffoldMessenger.of(context)
+                .showSnackBar(const SnackBar(content: Text('補學今天（示意）')));
+          },
+          onPreview3Days: () {
+            ScaffoldMessenger.of(context)
+                .showSnackBar(const SnackBar(content: Text('預覽未來 3 天（示意）')));
+            Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => PushProductConfigPage(productId: lp.productId),
+            ));
+          },
+          onTap: () async {
+            await UserLearningStore().markLearnedTodayAndGlobal(lp.productId);
+            ref.invalidate(weeklyCountProvider(lp.productId));
+            await ref
+                .read(libraryRepoProvider)
+                .touchLastOpened(ref.read(uidProvider), lp.productId);
+            // ignore: use_build_context_synchronously
+            Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => ProductLibraryPage(
+                  productId: lp.productId, isWishlistPreview: false),
+            ));
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildWishlistTab(BuildContext context, List<dynamic> visibleWish,
+      Map<String, Product> productsMap) {
+    if (visibleWish.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.favorite_border,
+                size: 64, color: Colors.white.withValues(alpha: 0.5)),
+            const SizedBox(height: 16),
+            Text(
+              '目前沒有願望清單',
+              style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.8), fontSize: 16),
+            ),
+            if (kDebugMode) ...[
+              const SizedBox(height: 8),
+              Text(
+                '點擊右上角的 🌾 按鈕來建立測試資料',
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.6), fontSize: 14),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+    visibleWish.sort((a, b) => b.addedAt.compareTo(a.addedAt));
+    return ListView.separated(
+      padding: const EdgeInsets.all(12),
+      itemCount: visibleWish.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      itemBuilder: (ctx, i) {
+        final w = visibleWish[i];
+        final product = productsMap[w.productId]!;
+        final uid2 = ref.read(uidProvider);
+        final tokens = ctx.tokens;
+        return LibraryRichCard(
+          title: product.title,
+          subtitle: '未購買 · 可試讀 ${product.trialLimit} 則',
+          coverImageUrl: null,
+          nextPushText: '試播：今晚 21:30（示意）',
+          weeklyProgress: '相符標籤：AI · 宇宙（示意）',
+          latestTitle: '免費預覽：第 1 則內容標題（示意）',
+          headerTrailing: PopupMenuButton<String>(
+            icon: Icon(Icons.more_horiz, color: tokens.textSecondary),
+            onSelected: (v) async {
+              final repo = ref.read(libraryRepoProvider);
+              if (v == 'fav') {
+                await repo.setProductFavorite(uid2, w.productId, !w.isFavorite);
+              } else if (v == 'remove') {
+                await repo.removeWishlist(uid2, w.productId);
+              } else if (v == 'buy') {
+                await repo.ensureLibraryProductExists(
+                  uid: uid2,
+                  productId: w.productId,
+                  purchasedAt: DateTime.now(),
+                );
+                await repo.removeWishlist(uid2, w.productId);
+                await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('購買成功！商品已加入泡泡庫（示意）')));
+                }
+              }
+            },
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: 'fav',
+                child: Row(
+                  children: [
+                    Icon(w.isFavorite ? Icons.star : Icons.star_border),
+                    const SizedBox(width: 10),
+                    Text(w.isFavorite ? '移除最愛' : '加入最愛'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'buy',
+                child: Row(
+                  children: [
+                    Icon(Icons.shopping_bag_outlined),
+                    SizedBox(width: 10),
+                    Text('立即購買'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'remove',
+                child: Row(
+                  children: [
+                    Icon(Icons.delete_outline),
+                    SizedBox(width: 10),
+                    Text('移除收藏'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          onLearnNow: () {
+            ScaffoldMessenger.of(context)
+                .showSnackBar(const SnackBar(content: Text('預覽 1 則（示意）')));
+          },
+          onMakeUpToday: () {
+            ScaffoldMessenger.of(context)
+                .showSnackBar(const SnackBar(content: Text('導向購買（示意）')));
+          },
+          onPreview3Days: () {
+            Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => ProductLibraryPage(
+                  productId: w.productId, isWishlistPreview: true),
+            ));
+          },
+          onTap: () {
+            Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => ProductLibraryPage(
+                  productId: w.productId, isWishlistPreview: true),
+            ));
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildFavoritesTab(
+    BuildContext context,
+    List<dynamic> visibleLib,
+    List<dynamic> visibleWish,
+    Map<String, Product> productsMap,
+    List<ScheduledPushEntry> scheduled,
+  ) {
+    // Helper: 根據 productId 找最早的排程項目
+    ScheduledPushEntry? nextEntryFor(String productId) {
+      final list = scheduled
+          .where((s) => s.payload['productId']?.toString() == productId)
+          .toList();
+      if (list.isEmpty) return null;
+      list.sort((a, b) => a.when.compareTo(b.when));
+      return list.first;
+    }
+
+    String fmtNextTime(DateTime dt) {
+      final hh = dt.hour.toString().padLeft(2, '0');
+      final mm = dt.minute.toString().padLeft(2, '0');
+      return '$hh:$mm';
+    }
+
+    String? extractDayFromBody(String body) {
+      final firstLine = body.split('\n').first;
+      final m = RegExp(r'Day\s+(\d+)/365').firstMatch(firstLine);
+      return m?.group(1);
+    }
+
+    String latestTitleText(ScheduledPushEntry e) {
+      final day = extractDayFromBody(e.body);
+      return day == null ? '下一則：${e.title}' : '下一則：${e.title}（Day $day）';
+    }
+
+    final favPids = <String>{};
+    for (final lp in visibleLib) {
+      if (lp.isFavorite) favPids.add(lp.productId);
+    }
+    for (final w in visibleWish) {
+      if (w.isFavorite) favPids.add(w.productId);
+    }
+
+    final favList = favPids.toList();
+    if (favList.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.star_border,
+                size: 64, color: Colors.white.withValues(alpha: 0.5)),
+            const SizedBox(height: 16),
+            Text(
+              '目前沒有最愛',
+              style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.8), fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '點擊商品旁的 ⭐ 按鈕來加入最愛',
+              style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.6), fontSize: 14),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.all(12),
+      itemCount: favList.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      itemBuilder: (ctx, i) {
+        final pid = favList[i];
+        final product = productsMap[pid]!;
+        final lp = visibleLib.where((e) => e.productId == pid).firstOrNull;
+        final isPurchased = lp != null;
+        final uid2 = ref.read(uidProvider);
+        final tokens = ctx.tokens;
+        final entry = isPurchased ? nextEntryFor(pid) : null;
+
+        // 找到 wishlist item
+        final w = visibleWish.where((e) => e.productId == pid).firstOrNull;
+        final favOn = lp?.isFavorite ?? w?.isFavorite ?? true;
+
+        // 本週完成度（真資料，僅已購買）
+        final weeklyText = isPurchased
+            ? ref.watch(weeklyCountProvider(pid)).when(
+                  data: (c) => '本週完成度：$c/7',
+                  loading: () => '本週完成度：…',
+                  error: (_, __) => '本週完成度：—',
+                )
+            : '相符標籤：美學 · 健康（示意）';
+
+        return LibraryRichCard(
+          title: product.title,
+          subtitle: isPurchased ? '已購買 · 可推播' : '未購買 · 願望清單',
+          coverImageUrl: null,
+          nextPushText: isPurchased
+              ? (entry == null
+                  ? '未來 3 天尚未排程'
+                  : '下一則：${fmtNextTime(entry.when)}')
+              : '尚未解鎖推播',
+          weeklyProgress: weeklyText,
+          latestTitle: isPurchased
+              ? (entry == null ? '下一則：尚未排程' : latestTitleText(entry))
+              : '免費預覽：第 1 則內容標題（示意）',
+          headerTrailing: PopupMenuButton<String>(
+            icon: Icon(Icons.more_horiz, color: tokens.textSecondary),
+            onSelected: (v) async {
+              final repo = ref.read(libraryRepoProvider);
+              if (v == 'fav') {
+                await repo.setProductFavorite(uid2, pid, !favOn);
+              } else if (v == 'removeWish' && !isPurchased) {
+                await repo.removeWishlist(uid2, pid);
+              } else if (v == 'push' && isPurchased) {
+                // ignore: use_build_context_synchronously
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => PushProductConfigPage(productId: pid),
+                ));
+              }
+            },
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: 'fav',
+                child: Row(
+                  children: [
+                    Icon(favOn ? Icons.star : Icons.star_border),
+                    const SizedBox(width: 10),
+                    Text(favOn ? '移除最愛' : '加入最愛'),
+                  ],
+                ),
+              ),
+              if (isPurchased)
+                const PopupMenuItem(
+                  value: 'push',
+                  child: Row(
+                    children: [
+                      Icon(Icons.notifications_active_outlined),
+                      SizedBox(width: 10),
+                      Text('推播設定'),
+                    ],
+                  ),
+                ),
+              if (!isPurchased)
+                const PopupMenuItem(
+                  value: 'removeWish',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete_outline),
+                      SizedBox(width: 10),
+                      Text('移除收藏'),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          onLearnNow: () async {
+            if (isPurchased) {
+              await UserLearningStore().markLearnedTodayAndGlobal(pid);
+              ref.invalidate(weeklyCountProvider(pid));
+            }
+            // ignore: use_build_context_synchronously
+            ScaffoldMessenger.of(context)
+                .showSnackBar(const SnackBar(content: Text('已記錄：今天完成 1 次學習')));
+          },
+          onMakeUpToday: () {
+            ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(isPurchased ? '補學今天（示意）' : '導向購買（示意）')));
+          },
+          onPreview3Days: () {
+            Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => ProductLibraryPage(
+                  productId: pid, isWishlistPreview: !isPurchased),
+            ));
+          },
+          onTap: () async {
+            if (isPurchased) {
+              await UserLearningStore().markLearnedTodayAndGlobal(pid);
+              ref.invalidate(weeklyCountProvider(pid));
+            }
+            // ignore: use_build_context_synchronously
+            Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => ProductLibraryPage(
+                  productId: pid, isWishlistPreview: !isPurchased),
+            ));
+          },
+        );
+      },
+    );
+  }
 
   Future<void> _seedDebugData(BuildContext context, String uid) async {
     final productsAsync = ref.read(productsMapProvider);
@@ -453,7 +683,8 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Debug 資料已建立：1-2 個已購買商品、1 個願望清單，其中一個已啟用推播')),
+          const SnackBar(
+              content: Text('Debug 資料已建立：1-2 個已購買商品、1 個願望清單，其中一個已啟用推播')),
         );
       }
     } catch (e) {

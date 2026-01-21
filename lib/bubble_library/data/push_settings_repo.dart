@@ -18,6 +18,8 @@ class PushSettingsRepo {
   }
 
   Future<void> setGlobal(String uid, GlobalPushSettings s) async {
-    await _db.doc(FirestorePaths.userGlobalPush(uid)).set(s.toMap(), SetOptions(merge: true));
+    await _db
+        .doc(FirestorePaths.userGlobalPush(uid))
+        .set(s.toMap(), SetOptions(merge: true));
   }
 }

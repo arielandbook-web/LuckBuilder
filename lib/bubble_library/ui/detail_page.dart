@@ -7,6 +7,7 @@ import '../providers/providers.dart';
 import '../models/content_item.dart';
 import '../models/user_library.dart';
 import 'widgets/bubble_card.dart';
+import '../../../theme/app_tokens.dart';
 
 class DetailPage extends ConsumerWidget {
   final String contentItemId;
@@ -35,9 +36,15 @@ class DetailPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final itemAsync = ref.watch(contentItemProvider(contentItemId));
     final savedAsync = ref.watch(savedItemsProvider);
+    final tokens = context.tokens;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Detail')),
+      backgroundColor: tokens.bg,
+      appBar: AppBar(
+        title: const Text('Detail'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+      ),
       body: itemAsync.when(
         data: (item) {
           final bullets = _splitBullets(item.content);
@@ -46,7 +53,7 @@ class DetailPage extends ConsumerWidget {
           return savedAsync.when(
             data: (savedMap) {
               final SavedContent? saved = savedMap[item.id];
-              
+
               // 檢查是否登入
               String? uid;
               try {
@@ -54,7 +61,7 @@ class DetailPage extends ConsumerWidget {
               } catch (_) {
                 return const Center(child: Text('請先登入以使用此功能'));
               }
-              
+
               final repo = ref.read(libraryRepoProvider);
 
               return ListView(
@@ -65,9 +72,12 @@ class DetailPage extends ConsumerWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(item.anchorGroup, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+                        Text(item.anchorGroup,
+                            style: const TextStyle(
+                                fontSize: 20, fontWeight: FontWeight.w900)),
                         const SizedBox(height: 6),
-                        Text(item.anchor, style: TextStyle(color: Colors.white.withOpacity(0.8))),
+                        Text(item.anchor,
+                            style: TextStyle(color: tokens.textSecondary)),
                         const SizedBox(height: 10),
                         Wrap(
                           spacing: 8,
@@ -89,32 +99,44 @@ class DetailPage extends ConsumerWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('今日一句', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
+                        const Text('今日一句',
+                            style: TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w900)),
                         const SizedBox(height: 8),
-                        Text(item.content, style: const TextStyle(fontSize: 18, height: 1.35, fontWeight: FontWeight.w800)),
+                        Text(item.content,
+                            style: const TextStyle(
+                                fontSize: 18,
+                                height: 1.35,
+                                fontWeight: FontWeight.w800)),
                         const SizedBox(height: 10),
                         Row(
                           children: [
                             TextButton.icon(
                               onPressed: () async {
-                                await Clipboard.setData(ClipboardData(text: item.content));
+                                await Clipboard.setData(
+                                    ClipboardData(text: item.content));
                                 // ignore: use_build_context_synchronously
-                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已複製')));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('已複製')));
                               },
                               icon: const Icon(Icons.copy, size: 18),
                               label: const Text('複製'),
                             ),
                             TextButton.icon(
                               onPressed: () {
-                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('可在此串接分享功能')));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('可在此串接分享功能')));
                               },
                               icon: const Icon(Icons.share, size: 18),
                               label: const Text('分享'),
                             ),
                             const Spacer(),
                             IconButton(
-                              icon: Icon((saved?.favorite ?? false) ? Icons.star : Icons.star_border),
-                              onPressed: () => repo.setSavedItem(uid!, item.id, {'favorite': !(saved?.favorite ?? false)}),
+                              icon: Icon((saved?.favorite ?? false)
+                                  ? Icons.star
+                                  : Icons.star_border),
+                              onPressed: () => repo.setSavedItem(uid!, item.id,
+                                  {'favorite': !(saved?.favorite ?? false)}),
                             ),
                           ],
                         ),
@@ -128,7 +150,9 @@ class DetailPage extends ConsumerWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('白話拆解', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
+                        const Text('白話拆解',
+                            style: TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w900)),
                         const SizedBox(height: 10),
                         ...bullets.map((b) => Padding(
                               padding: const EdgeInsets.only(bottom: 6),
@@ -136,7 +160,10 @@ class DetailPage extends ConsumerWidget {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   const Text('•  '),
-                                  Expanded(child: Text(b, style: const TextStyle(height: 1.35))),
+                                  Expanded(
+                                      child: Text(b,
+                                          style:
+                                              const TextStyle(height: 1.35))),
                                 ],
                               ),
                             )),
@@ -158,26 +185,35 @@ class DetailPage extends ConsumerWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('延伸閱讀', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
+                        const Text('延伸閱讀',
+                            style: TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w900)),
                         const SizedBox(height: 10),
                         if (urls.isEmpty)
-                          Text('目前沒有連結', style: TextStyle(color: Colors.white.withOpacity(0.7)))
+                          Text('目前沒有連結',
+                              style: TextStyle(color: tokens.textSecondary))
                         else
                           ...urls.map((u) => Padding(
                                 padding: const EdgeInsets.only(bottom: 8),
                                 child: InkWell(
                                   onTap: () async {
                                     if (await canLaunchUrl(u)) {
-                                      await launchUrl(u, mode: LaunchMode.externalApplication);
+                                      await launchUrl(u,
+                                          mode: LaunchMode.externalApplication);
                                     } else {
                                       if (context.mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('無法開啟此連結')),
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                              content: Text('無法開啟此連結')),
                                         );
                                       }
                                     }
                                   },
-                                  child: Text(u.toString(), style: const TextStyle(decoration: TextDecoration.underline)),
+                                  child: Text(u.toString(),
+                                      style: const TextStyle(
+                                          decoration:
+                                              TextDecoration.underline)),
                                 ),
                               )),
                       ],
@@ -203,7 +239,8 @@ class DetailPage extends ConsumerWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('1 分鐘練習', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
+          const Text('1 分鐘練習',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
           const SizedBox(height: 10),
           const Text('用你自己的話說一次（像跟朋友解釋）'),
           const SizedBox(height: 10),
@@ -216,7 +253,8 @@ class DetailPage extends ConsumerWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('1 分鐘練習', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
+          const Text('1 分鐘練習',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
           const SizedBox(height: 10),
           const Text('照做清單'),
           const SizedBox(height: 10),
@@ -230,7 +268,8 @@ class DetailPage extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('1 分鐘練習', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
+        const Text('1 分鐘練習',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
         const SizedBox(height: 10),
         const Text('A vs B（兩欄對照）'),
         const SizedBox(height: 10),
@@ -255,34 +294,58 @@ class DetailPage extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('常見誤解', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
+        const Text('常見誤解',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
         const SizedBox(height: 10),
         Text(misconception),
         const SizedBox(height: 8),
-        Text(correct, style: TextStyle(color: Colors.white.withOpacity(0.85))),
+        Builder(
+          builder: (context) {
+            final tokens = context.tokens;
+            return Text(correct, style: TextStyle(color: tokens.textPrimary));
+          },
+        ),
       ],
     );
   }
 
-  Widget _chip(String text) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.10),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: Colors.white.withOpacity(0.12)),
-        ),
-        child: Text(text, style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 12)),
+  Widget _chip(String text) => Builder(
+        builder: (context) {
+          final tokens = context.tokens;
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              gradient: tokens.chipGradient,
+              color: tokens.chipGradient == null ? tokens.chipBg : null,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: tokens.cardBorder),
+            ),
+            child: Text(
+              text,
+              style: TextStyle(
+                  color: tokens.textPrimary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600),
+            ),
+          );
+        },
       );
 
-  Widget _hintBox(String text) => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.06),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white.withOpacity(0.10)),
-        ),
-        child: Text(text, style: TextStyle(color: Colors.white.withOpacity(0.85))),
+  Widget _hintBox(String text) => Builder(
+        builder: (context) {
+          final tokens = context.tokens;
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              gradient: tokens.cardGradient,
+              color: tokens.cardGradient == null ? tokens.cardBg : null,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: tokens.cardBorder),
+            ),
+            child: Text(text, style: TextStyle(color: tokens.textPrimary)),
+          );
+        },
       );
 
   Widget _check(String text) => Padding(
@@ -296,20 +359,29 @@ class DetailPage extends ConsumerWidget {
         ),
       );
 
-  Widget _smallCard(String title, String body) => Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.06),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white.withOpacity(0.10)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
-            const SizedBox(height: 6),
-            Text(body, style: TextStyle(color: Colors.white.withOpacity(0.85))),
-          ],
-        ),
+  Widget _smallCard(String title, String body) => Builder(
+        builder: (context) {
+          final tokens = context.tokens;
+          return Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              gradient: tokens.cardGradient,
+              color: tokens.cardGradient == null ? tokens.cardBg : null,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: tokens.cardBorder),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: tokens.textPrimary)),
+                const SizedBox(height: 6),
+                Text(body, style: TextStyle(color: tokens.textSecondary)),
+              ],
+            ),
+          );
+        },
       );
 }

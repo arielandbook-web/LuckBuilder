@@ -36,8 +36,11 @@ class GlobalPushSettings {
     return GlobalPushSettings(
       enabled: (m['enabled'] ?? true) as bool,
       dailyTotalCap: ((m['dailyTotalCap'] ?? 8) as num).toInt().clamp(1, 50),
-      quietHours: TimeRange.fromMap((m['quietHours'] as Map?)?.cast<String, dynamic>()),
-      daysOfWeek: (m['daysOfWeek'] as List<dynamic>? ?? [1, 2, 3, 4, 5, 6, 7]).map((e) => (e as num).toInt()).toSet(),
+      quietHours:
+          TimeRange.fromMap((m['quietHours'] as Map?)?.cast<String, dynamic>()),
+      daysOfWeek: (m['daysOfWeek'] as List<dynamic>? ?? [1, 2, 3, 4, 5, 6, 7])
+          .map((e) => (e as num).toInt())
+          .toSet(),
       styleMode: (m['styleMode'] ?? 'standard') as String,
     );
   }

@@ -3,8 +3,8 @@ class Product {
   final String title;
   final bool published;
   final String pushStrategy; // seq
-  final String trialMode;    // previewFlag
-  final int trialLimit;      // 3
+  final String trialMode; // previewFlag
+  final int trialLimit; // 3
   final int order;
 
   const Product({
@@ -21,13 +21,15 @@ class Product {
     // 處理可能為 null 的 String 欄位
     final pushStrategyValue = m['pushStrategy'];
     final trialModeValue = m['trialMode'];
-    
+
     return Product(
       id: id,
       title: (m['title'] ?? '') as String,
       published: (m['published'] ?? false) as bool,
-      pushStrategy: (pushStrategyValue != null ? pushStrategyValue.toString() : 'seq'),
-      trialMode: (trialModeValue != null ? trialModeValue.toString() : 'previewFlag'),
+      pushStrategy:
+          (pushStrategyValue != null ? pushStrategyValue.toString() : 'seq'),
+      trialMode:
+          (trialModeValue != null ? trialModeValue.toString() : 'previewFlag'),
       trialLimit: ((m['trialLimit'] ?? 3) as num).toInt(),
       order: ((m['order'] ?? 0) as num).toInt(),
     );

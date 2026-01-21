@@ -252,10 +252,7 @@ class V2Repository {
   // 從 ui/segments_v1 文件讀取（與上傳腳本一致）
   Future<List<Segment>> fetchSegments() async {
     try {
-      final doc = await _firestore
-          .collection(Col.ui)
-          .doc('segments_v1')
-          .get();
+      final doc = await _firestore.collection(Col.ui).doc('segments_v1').get();
 
       if (!doc.exists || doc.data() == null) {
         return [];
@@ -273,7 +270,7 @@ class V2Repository {
           .map((item) => Segment.fromMap(item as Map<String, dynamic>))
           .where((s) => s.published)
           .toList();
-      
+
       segments.sort((a, b) => a.order.compareTo(b.order));
       return segments;
     } catch (e) {
@@ -285,9 +282,8 @@ class V2Repository {
   // 根據區段獲取主題
   Future<List<Topic>> fetchTopicsForSegment(Segment segment) async {
     try {
-      Query<Map<String, dynamic>> query = _firestore
-          .collection(Col.topics)
-          .where(F.published, isEqualTo: true);
+      Query<Map<String, dynamic>> query =
+          _firestore.collection(Col.topics).where(F.published, isEqualTo: true);
 
       if (segment.mode == 'tag' && segment.tag != null) {
         query = query.where(F.tags, arrayContains: segment.tag);
@@ -334,13 +330,11 @@ class V2Repository {
           .get();
 
       final productsMap = {
-        for (var doc in snapshot.docs) doc.id: Product.fromDoc(doc.id, doc.data())
+        for (var doc in snapshot.docs)
+          doc.id: Product.fromDoc(doc.id, doc.data())
       };
 
-      return ids
-          .map((id) => productsMap[id])
-          .whereType<Product>()
-          .toList();
+      return ids.map((id) => productsMap[id]).whereType<Product>().toList();
     } catch (e) {
       print('Error fetching products by ids ordered: $e');
       return [];
@@ -369,7 +363,8 @@ class V2Repository {
   // 根據 ID 獲取產品
   Future<Product?> fetchProduct(String productId) async {
     try {
-      final doc = await _firestore.collection(Col.products).doc(productId).get();
+      final doc =
+          await _firestore.collection(Col.products).doc(productId).get();
       if (doc.exists && doc.data() != null) {
         final data = doc.data()!;
         if (data[F.published] == true) {
@@ -384,7 +379,8 @@ class V2Repository {
   }
 
   // 獲取預覽內容項目（限制數量）
-  Future<List<ContentItem>> fetchPreviewItems(String productId, int limit) async {
+  Future<List<ContentItem>> fetchPreviewItems(
+      String productId, int limit) async {
     try {
       final snapshot = await _firestore
           .collection(Col.contentItems)

@@ -1,4 +1,6 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import '../theme/app_tokens.dart';
 
 class GlassCard extends StatelessWidget {
   final Widget child;
@@ -14,14 +16,24 @@ class GlassCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: padding,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(radius),
-        color: Colors.white.withValues(alpha: 0.35),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.35)),
+    final tokens = context.tokens;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(
+            sigmaX: tokens.glassBlurSigma, sigmaY: tokens.glassBlurSigma),
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(radius),
+            gradient: tokens.cardGradient,
+            color: tokens.cardGradient == null ? tokens.cardBg : null,
+            border: Border.all(color: tokens.cardBorder),
+            boxShadow: tokens.cardShadow,
+          ),
+          child: child,
+        ),
       ),
-      child: child,
     );
   }
 }

@@ -1,24 +1,47 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/v2_providers.dart';
 import '../ui/glass.dart';
+import '../theme/app_tokens.dart';
+import '../widgets/rich_sections/user_learning_store.dart';
 
-class ProductPage extends ConsumerWidget {
+class ProductPage extends ConsumerStatefulWidget {
   final String productId;
   const ProductPage({super.key, required this.productId});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final prod = ref.watch(productProvider(productId));
-    final previews = ref.watch(previewItemsProvider(productId));
+  ConsumerState<ProductPage> createState() => _ProductPageState();
+}
+
+class _ProductPageState extends ConsumerState<ProductPage> {
+  @override
+  void initState() {
+    super.initState();
+    // 保底記錄：進入產品頁就記一次學習
+    unawaited(UserLearningStore().markGlobalLearnedToday());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final prod = ref.watch(productProvider(widget.productId));
+    final previews = ref.watch(previewItemsProvider(widget.productId));
+    final tokens = context.tokens;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('產品')),
+      backgroundColor: tokens.bg,
+      appBar: AppBar(
+        title: const Text('產品'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+      ),
       body: prod.when(
         data: (p) {
           if (p == null) return const Center(child: Text('商品不存在或未上架'));
           final specs = [p.spec1Label, p.spec2Label, p.spec3Label, p.spec4Label]
-              .whereType<String>().where((s) => s.isNotEmpty).toList();
+              .whereType<String>()
+              .where((s) => s.isNotEmpty)
+              .toList();
 
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -31,16 +54,19 @@ class ProductPage extends ConsumerWidget {
                     // 封面圖片
                     if (p.coverImageUrl != null && p.coverImageUrl!.isNotEmpty)
                       ClipRRect(
-                        borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
+                        borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(26)),
                         child: Image.network(
                           p.coverImageUrl!,
                           width: double.infinity,
                           height: 200,
                           fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => Container(
+                          errorBuilder: (context, error, stackTrace) =>
+                              Container(
                             height: 200,
-                            color: Colors.grey[200],
-                            child: const Icon(Icons.image_not_supported, size: 48),
+                            color: tokens.chipBg,
+                            child: Icon(Icons.image_not_supported,
+                                size: 48, color: tokens.textSecondary),
                           ),
                         ),
                       ),
@@ -49,13 +75,22 @@ class ProductPage extends ConsumerWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(p.title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+                          Text(p.title,
+                              style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w900,
+                                  color: tokens.textPrimary)),
                           const SizedBox(height: 6),
-                          Text('${p.topicId} · ${p.level}', style: TextStyle(color: Colors.black.withValues(alpha: 0.55))),
+                          Text('${p.topicId} · ${p.level}',
+                              style: TextStyle(color: tokens.textSecondary)),
                           const SizedBox(height: 12),
-                          if ((p.levelGoal ?? '').isNotEmpty) Text(p.levelGoal!),
+                          if ((p.levelGoal ?? '').isNotEmpty)
+                            Text(p.levelGoal!,
+                                style: TextStyle(color: tokens.textPrimary)),
                           const SizedBox(height: 6),
-                          if ((p.levelBenefit ?? '').isNotEmpty) Text(p.levelBenefit!),
+                          if ((p.levelBenefit ?? '').isNotEmpty)
+                            Text(p.levelBenefit!,
+                                style: TextStyle(color: tokens.textSecondary)),
                         ],
                       ),
                     ),
@@ -63,21 +98,25 @@ class ProductPage extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: 12),
-
               Wrap(
                 spacing: 10,
                 runSpacing: 10,
-                children: specs.map((s) => GlassCard(
-                  radius: 999,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: Text(s),
-                )).toList(),
+                children: specs
+                    .map((s) => GlassCard(
+                          radius: 999,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                          child: Text(s),
+                        ))
+                    .toList(),
               ),
               const SizedBox(height: 20),
-
-              const Text('│ 試讀卡片', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+              Text('│ 試讀卡片',
+                  style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: tokens.textPrimary)),
               const SizedBox(height: 10),
-
               previews.when(
                 data: (items) => SizedBox(
                   height: 160,
@@ -93,14 +132,23 @@ class ProductPage extends ConsumerWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(it.anchor, maxLines: 1, overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontWeight: FontWeight.w900)),
+                              Text(it.anchor,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      color: tokens.textPrimary)),
                               const SizedBox(height: 6),
-                              Text(it.content, maxLines: 3, overflow: TextOverflow.ellipsis),
+                              Text(it.content,
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                  style:
+                                      TextStyle(color: tokens.textSecondary)),
                               const Spacer(),
                               GlassCard(
                                 radius: 999,
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 6),
                                 child: Text('${it.intent} · d${it.difficulty}'),
                               ),
                             ],
@@ -110,18 +158,43 @@ class ProductPage extends ConsumerWidget {
                     },
                   ),
                 ),
-                loading: () => const SizedBox(height: 160, child: Center(child: CircularProgressIndicator())),
+                loading: () => const SizedBox(
+                    height: 160,
+                    child: Center(child: CircularProgressIndicator())),
                 error: (_, __) => const SizedBox(height: 160),
               ),
-
               const SizedBox(height: 22),
               GlassCard(
                 radius: 22,
-                child: Row(
-                  children: [
-                    const Expanded(child: Text('訂閱解鎖全站', style: TextStyle(fontWeight: FontWeight.w900))),
-                    ElevatedButton(onPressed: () {}, child: const Text('立即訂閱')),
-                  ],
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: tokens.buttonGradient,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.only(left: 16),
+                          child: Text('訂閱解鎖全站',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.white)),
+                        ),
+                      ),
+                      ElevatedButton(
+                        onPressed: () {},
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white.withValues(alpha: 0.2),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        ),
+                        child: const Text('立即訂閱'),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -136,10 +209,14 @@ class ProductPage extends ConsumerWidget {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('讀取失敗:', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                  Text('讀取失敗:',
+                      style: TextStyle(
+                          color: tokens.textPrimary,
+                          fontWeight: FontWeight.bold)),
                   const SizedBox(height: 4),
-                  Text('$err', 
-                    style: const TextStyle(color: Colors.red, fontSize: 12),
+                  Text(
+                    '$err',
+                    style: TextStyle(color: tokens.textSecondary, fontSize: 12),
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
                   ),

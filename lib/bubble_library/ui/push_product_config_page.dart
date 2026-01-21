@@ -42,13 +42,18 @@ class PushProductConfigPage extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                      Text(title,
+                          style: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.w900)),
                       const SizedBox(height: 8),
                       SwitchListTile.adaptive(
                         value: lp.pushEnabled,
                         onChanged: (v) async {
-                          await ref.read(libraryRepoProvider).setPushEnabled(uid!, productId, v);
-                          await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
+                          await ref
+                              .read(libraryRepoProvider)
+                              .setPushEnabled(uid!, productId, v);
+                          await PushOrchestrator.rescheduleNextDays(
+                              ref: ref, days: 3);
                         },
                         title: const Text('推播中'),
                       ),
@@ -60,66 +65,96 @@ class PushProductConfigPage extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('頻率（每產品每日最多 5 次）', style: TextStyle(fontWeight: FontWeight.w900)),
+                      const Text('頻率（每產品每日最多 5 次）',
+                          style: TextStyle(fontWeight: FontWeight.w900)),
                       const SizedBox(height: 10),
                       DropdownButton<int>(
                         value: cfg.freqPerDay,
-                        items: const [1, 2, 3, 4, 5].map((e) => DropdownMenuItem(value: e, child: Text('$e 次/天'))).toList(),
+                        items: const [1, 2, 3, 4, 5]
+                            .map((e) => DropdownMenuItem(
+                                value: e, child: Text('$e 次/天')))
+                            .toList(),
                         onChanged: (v) async {
                           if (v == null) return;
                           final newCfg = cfg.copyWith(freqPerDay: v);
-                          await ref.read(libraryRepoProvider).setPushConfig(uid!, productId, newCfg.toMap());
-                          await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
+                          await ref
+                              .read(libraryRepoProvider)
+                              .setPushConfig(uid!, productId, newCfg.toMap());
+                          await PushOrchestrator.rescheduleNextDays(
+                              ref: ref, days: 3);
                         },
                       ),
                       const Divider(),
-                      const Text('時間模式', style: TextStyle(fontWeight: FontWeight.w900)),
+                      const Text('時間模式',
+                          style: TextStyle(fontWeight: FontWeight.w900)),
                       RadioListTile<PushTimeMode>(
                         value: PushTimeMode.preset,
                         groupValue: cfg.timeMode,
                         onChanged: (v) async {
                           if (v == null) return;
                           final newCfg = cfg.copyWith(timeMode: v);
-                          await ref.read(libraryRepoProvider).setPushConfig(uid!, productId, newCfg.toMap());
-                          await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
+                          await ref
+                              .read(libraryRepoProvider)
+                              .setPushConfig(uid!, productId, newCfg.toMap());
+                          await PushOrchestrator.rescheduleNextDays(
+                              ref: ref, days: 3);
                         },
                         title: const Text('情境預設（推薦）'),
                       ),
-                      if (cfg.timeMode == PushTimeMode.preset) _presetSlots(ref, uid!, productId, cfg),
+                      if (cfg.timeMode == PushTimeMode.preset)
+                        _presetSlots(ref, uid!, productId, cfg),
                       RadioListTile<PushTimeMode>(
                         value: PushTimeMode.custom,
                         groupValue: cfg.timeMode,
                         onChanged: (v) async {
                           if (v == null) return;
                           final newCfg = cfg.copyWith(timeMode: v);
-                          await ref.read(libraryRepoProvider).setPushConfig(uid!, productId, newCfg.toMap());
-                          await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
+                          await ref
+                              .read(libraryRepoProvider)
+                              .setPushConfig(uid!, productId, newCfg.toMap());
+                          await PushOrchestrator.rescheduleNextDays(
+                              ref: ref, days: 3);
                         },
                         title: const Text('自訂時間'),
                       ),
-                      if (cfg.timeMode == PushTimeMode.custom) _customTimes(context, ref, uid!, productId, cfg),
+                      if (cfg.timeMode == PushTimeMode.custom)
+                        _customTimes(context, ref, uid!, productId, cfg),
                       const Divider(),
-                      const Text('內容策略', style: TextStyle(fontWeight: FontWeight.w900)),
+                      const Text('內容策略',
+                          style: TextStyle(fontWeight: FontWeight.w900)),
                       DropdownButton<PushContentMode>(
                         value: cfg.contentMode,
-                        items: PushContentMode.values.map((e) => DropdownMenuItem(value: e, child: Text(e.name))).toList(),
+                        items: PushContentMode.values
+                            .map((e) =>
+                                DropdownMenuItem(value: e, child: Text(e.name)))
+                            .toList(),
                         onChanged: (v) async {
                           if (v == null) return;
                           final newCfg = cfg.copyWith(contentMode: v);
-                          await ref.read(libraryRepoProvider).setPushConfig(uid!, productId, newCfg.toMap());
-                          await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
+                          await ref
+                              .read(libraryRepoProvider)
+                              .setPushConfig(uid!, productId, newCfg.toMap());
+                          await PushOrchestrator.rescheduleNextDays(
+                              ref: ref, days: 3);
                         },
                       ),
                       const SizedBox(height: 10),
-                      const Text('最短間隔（分鐘）', style: TextStyle(fontWeight: FontWeight.w900)),
+                      const Text('最短間隔（分鐘）',
+                          style: TextStyle(fontWeight: FontWeight.w900)),
                       DropdownButton<int>(
                         value: cfg.minIntervalMinutes,
-                        items: const [60, 90, 120, 180].map((e) => DropdownMenuItem(value: e, child: Text('$e'))).toList(),
+                        items: const [60, 90, 120, 180]
+                            .map((e) =>
+                                DropdownMenuItem(value: e, child: Text('$e')))
+                            .toList(),
                         onChanged: (v) async {
                           if (v == null) return;
                           final newCfg = cfg.copyWith(minIntervalMinutes: v);
-                          await ref.read(libraryRepoProvider).setPushConfig(uid!, productId, newCfg.toMap());
-                          await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
+                          await ref
+                              .read(libraryRepoProvider)
+                              .setPushConfig(uid!, productId, newCfg.toMap());
+                          await PushOrchestrator.rescheduleNextDays(
+                              ref: ref, days: 3);
                         },
                       ),
                     ],
@@ -137,7 +172,8 @@ class PushProductConfigPage extends ConsumerWidget {
     );
   }
 
-  Widget _presetSlots(WidgetRef ref, String uid, String productId, PushConfig cfg) {
+  Widget _presetSlots(
+      WidgetRef ref, String uid, String productId, PushConfig cfg) {
     const slots = ['morning', 'noon', 'evening', 'night'];
     return Wrap(
       spacing: 8,
@@ -156,7 +192,9 @@ class PushProductConfigPage extends ConsumerWidget {
             }
             final fixed = newSlots.isEmpty ? ['night'] : newSlots;
             final newCfg = cfg.copyWith(presetSlots: fixed);
-            await ref.read(libraryRepoProvider).setPushConfig(uid, productId, newCfg.toMap());
+            await ref
+                .read(libraryRepoProvider)
+                .setPushConfig(uid, productId, newCfg.toMap());
             await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
           },
         );
@@ -164,7 +202,8 @@ class PushProductConfigPage extends ConsumerWidget {
     );
   }
 
-  Widget _customTimes(BuildContext context, WidgetRef ref, String uid, String productId, PushConfig cfg) {
+  Widget _customTimes(BuildContext context, WidgetRef ref, String uid,
+      String productId, PushConfig cfg) {
     return Column(
       children: [
         Align(
@@ -172,14 +211,19 @@ class PushProductConfigPage extends ConsumerWidget {
           child: TextButton.icon(
             onPressed: () async {
               if (cfg.customTimes.length >= 5) return;
-              final t = await showTimePicker(context: context, initialTime: const TimeOfDay(hour: 21, minute: 40));
+              final t = await showTimePicker(
+                  context: context,
+                  initialTime: const TimeOfDay(hour: 21, minute: 40));
               if (t == null) return;
 
               final list = List<TimeOfDay>.from(cfg.customTimes)..add(t);
-              list.sort((a, b) => (a.hour * 60 + a.minute).compareTo(b.hour * 60 + b.minute));
+              list.sort((a, b) =>
+                  (a.hour * 60 + a.minute).compareTo(b.hour * 60 + b.minute));
 
               final newCfg = cfg.copyWith(customTimes: list);
-              await ref.read(libraryRepoProvider).setPushConfig(uid, productId, newCfg.toMap());
+              await ref
+                  .read(libraryRepoProvider)
+                  .setPushConfig(uid, productId, newCfg.toMap());
               await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
             },
             icon: const Icon(Icons.add),
@@ -187,15 +231,19 @@ class PushProductConfigPage extends ConsumerWidget {
           ),
         ),
         ...cfg.customTimes.map((t) => ListTile(
-              title: Text('${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}'),
+              title: Text(
+                  '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}'),
               trailing: IconButton(
                 icon: const Icon(Icons.close),
                 onPressed: () async {
                   final list = List<TimeOfDay>.from(cfg.customTimes)
-                    ..removeWhere((x) => x.hour == t.hour && x.minute == t.minute);
+                    ..removeWhere(
+                        (x) => x.hour == t.hour && x.minute == t.minute);
 
                   final newCfg = cfg.copyWith(customTimes: list);
-                  await ref.read(libraryRepoProvider).setPushConfig(uid, productId, newCfg.toMap());
+                  await ref
+                      .read(libraryRepoProvider)
+                      .setPushConfig(uid, productId, newCfg.toMap());
                   await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
                 },
               ),

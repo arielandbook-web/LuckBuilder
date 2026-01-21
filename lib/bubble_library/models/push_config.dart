@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 
 enum PushTimeMode { preset, custom }
+
 enum PushContentMode { seq, mixNewReview, preferUnlearned, preferSaved }
 
 class TimeRange {
   final TimeOfDay start; // inclusive
-  final TimeOfDay end;   // exclusive; can cross midnight
+  final TimeOfDay end; // exclusive; can cross midnight
   const TimeRange(this.start, this.end);
 
   Map<String, dynamic> toMap() => {
@@ -15,13 +16,18 @@ class TimeRange {
 
   factory TimeRange.fromMap(Map<String, dynamic>? m) {
     if (m == null) {
-      return const TimeRange(TimeOfDay(hour: 22, minute: 0), TimeOfDay(hour: 8, minute: 0));
+      return const TimeRange(
+          TimeOfDay(hour: 22, minute: 0), TimeOfDay(hour: 8, minute: 0));
     }
     final s = (m['start'] as Map?)?.cast<String, dynamic>() ?? {};
     final e = (m['end'] as Map?)?.cast<String, dynamic>() ?? {};
     return TimeRange(
-      TimeOfDay(hour: ((s['h'] ?? 22) as num).toInt(), minute: ((s['m'] ?? 0) as num).toInt()),
-      TimeOfDay(hour: ((e['h'] ?? 8) as num).toInt(), minute: ((e['m'] ?? 0) as num).toInt()),
+      TimeOfDay(
+          hour: ((s['h'] ?? 22) as num).toInt(),
+          minute: ((s['m'] ?? 0) as num).toInt()),
+      TimeOfDay(
+          hour: ((e['h'] ?? 8) as num).toInt(),
+          minute: ((e['m'] ?? 0) as num).toInt()),
     );
   }
 }
@@ -53,7 +59,8 @@ class PushConfig {
         presetSlots: ['night'], // 預設睡前（最不打擾）
         customTimes: [],
         daysOfWeek: {1, 2, 3, 4, 5, 6, 7},
-        quietHours: TimeRange(TimeOfDay(hour: 22, minute: 0), TimeOfDay(hour: 8, minute: 0)),
+        quietHours: TimeRange(
+            TimeOfDay(hour: 22, minute: 0), TimeOfDay(hour: 8, minute: 0)),
         minIntervalMinutes: 120,
         contentMode: PushContentMode.seq,
       );
@@ -62,7 +69,8 @@ class PushConfig {
         'freqPerDay': freqPerDay,
         'timeMode': timeMode.name,
         'presetSlots': presetSlots,
-        'customTimes': customTimes.map((t) => {'h': t.hour, 'm': t.minute}).toList(),
+        'customTimes':
+            customTimes.map((t) => {'h': t.hour, 'm': t.minute}).toList(),
         'daysOfWeek': daysOfWeek.toList(),
         'quietHours': quietHours.toMap(),
         'minIntervalMinutes': minIntervalMinutes,
@@ -84,13 +92,21 @@ class PushConfig {
 
     return PushConfig(
       freqPerDay: ((m['freqPerDay'] ?? 1) as num).toInt().clamp(1, 5),
-      timeMode: PushTimeMode.values.firstWhere((e) => e.name == tm, orElse: () => PushTimeMode.preset),
-      presetSlots: (m['presetSlots'] as List<dynamic>? ?? ['night']).map((e) => e.toString()).toList(),
+      timeMode: PushTimeMode.values
+          .firstWhere((e) => e.name == tm, orElse: () => PushTimeMode.preset),
+      presetSlots: (m['presetSlots'] as List<dynamic>? ?? ['night'])
+          .map((e) => e.toString())
+          .toList(),
       customTimes: customTimes.take(5).toList(),
-      daysOfWeek: (m['daysOfWeek'] as List<dynamic>? ?? [1, 2, 3, 4, 5, 6, 7]).map((e) => (e as num).toInt()).toSet(),
-      quietHours: TimeRange.fromMap((m['quietHours'] as Map?)?.cast<String, dynamic>()),
-      minIntervalMinutes: ((m['minIntervalMinutes'] ?? 120) as num).toInt().clamp(30, 24 * 60),
-      contentMode: PushContentMode.values.firstWhere((e) => e.name == cm, orElse: () => PushContentMode.seq),
+      daysOfWeek: (m['daysOfWeek'] as List<dynamic>? ?? [1, 2, 3, 4, 5, 6, 7])
+          .map((e) => (e as num).toInt())
+          .toSet(),
+      quietHours:
+          TimeRange.fromMap((m['quietHours'] as Map?)?.cast<String, dynamic>()),
+      minIntervalMinutes:
+          ((m['minIntervalMinutes'] ?? 120) as num).toInt().clamp(30, 24 * 60),
+      contentMode: PushContentMode.values
+          .firstWhere((e) => e.name == cm, orElse: () => PushContentMode.seq),
     );
   }
 
