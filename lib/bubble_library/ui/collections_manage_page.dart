@@ -9,6 +9,7 @@ import '../notifications/push_orchestrator.dart';
 import '../providers/providers.dart';
 import '../../notifications/daily_routine_store.dart';
 import '../../notifications/push_timeline_provider.dart';
+import 'collection_detail_page.dart';
 import 'daily_routine_order_page.dart';
 
 class CollectionsManagePage extends ConsumerWidget {
@@ -417,6 +418,20 @@ class CollectionsManagePage extends ConsumerWidget {
                               purchased: purchased,
                               pushing: pushing,
                               previewTitles: previewTitles,
+                              onTap: () {
+                                final ids = (c.productIds as List)
+                                    .map((e) => e.toString())
+                                    .toList();
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => CollectionDetailPage(
+                                      collectionId: c.id,
+                                      collectionName: c.name,
+                                      productIds: ids,
+                                    ),
+                                  ),
+                                );
+                              },
                               trailing: _buildTrailingForCollection(
                                   context, ref, c, routine),
                             );
@@ -701,7 +716,6 @@ class _CollectionDenseCard extends StatelessWidget {
     required this.purchased,
     required this.pushing,
     required this.previewTitles,
-    // ignore: unused_element_parameter — 保留供之後 onTap 行為使用
     this.onTap,
     this.trailing,
   });

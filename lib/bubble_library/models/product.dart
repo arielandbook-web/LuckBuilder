@@ -6,6 +6,9 @@ class Product {
   final String trialMode; // previewFlag
   final int trialLimit; // 3
   final int order;
+  final String topicId;
+  final String level;
+  final String? levelGoal;
 
   const Product({
     required this.id,
@@ -15,6 +18,9 @@ class Product {
     required this.trialMode,
     required this.trialLimit,
     required this.order,
+    this.topicId = '',
+    this.level = 'L1',
+    this.levelGoal,
   });
 
   factory Product.fromMap(String id, Map<String, dynamic> m) {
@@ -32,6 +38,9 @@ class Product {
           (trialModeValue != null ? trialModeValue.toString() : 'previewFlag'),
       trialLimit: ((m['trialLimit'] ?? 3) as num).toInt(),
       order: ((m['order'] ?? 0) as num).toInt(),
+      topicId: m['topicId']?.toString() ?? '',
+      level: m['level']?.toString() ?? 'L1',
+      levelGoal: m['levelGoal']?.toString(),
     );
   }
 }
