@@ -14,6 +14,7 @@ import 'product_page.dart';
 // ✅ 若你專案有這個 provider（泡泡庫在用），就能做「已購買/推播中」篩選。
 // 沒登入或不存在會自動 fallback，不會影響搜尋基本功能。
 import '../bubble_library/providers/providers.dart' as v1;
+import '../bubble_library/providers/providers.dart';
 
 enum SearchSort { relevant, title, level }
 
@@ -478,6 +479,13 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
     // ✅ library 只用於「已購買/推播中」篩選與顯示，不會影響基本搜尋
     final libAsync = _watchLibrarySafe(ref);
+    final libAsync2 = ref.watch(libraryProductsProvider);
+    final wishAsync = ref.watch(wishlistProvider);
+
+    final ownedFilter = ref.watch(searchOwnedFilterProvider);
+    final pushFilter = ref.watch(searchPushFilterProvider);
+    final wishFilter = ref.watch(searchWishFilterProvider);
+    final levelFilter = ref.watch(searchLevelFilterProvider);
 
     return SafeArea(
       child: Column(
@@ -583,16 +591,120 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                 final products = productsRaw.cast<dynamic>();
 
                 final lib = libAsync.value ?? const <dynamic>[];
-                final purchasedSet = _purchasedSetFromLib(lib);
-                final pushingSet = _pushingSetFromLib(lib);
+                final purchasedSetOld = _purchasedSetFromLib(lib);
+                final pushingSetOld = _pushingSetFromLib(lib);
 
-                final filtered = _applyFiltersAndSort(
-                  products: products,
+                // ✅ 新的 filter sets（用於新的 filter chips）
+                final purchasedSet = <String>{};
+                final pushingSet = <String>{};
+                final wishedSet = <String>{};
+
+                libAsync2.whenData((lib) {
+                  for (final lp in lib) {
+                    if (lp.isHidden) continue;
+                    purchasedSet.add(lp.productId);
+                    if (lp.pushEnabled) pushingSet.add(lp.productId);
+                  }
+                });
+
+                wishAsync.whenData((wish) {
+                  for (final w in wish) {
+                    wishedSet.add(w.productId);
+                  }
+                });
+
+                // ✅ 先套用新的 filters
+                List filtered = products;
+
+                if (ownedFilter == SearchOwnedFilter.purchased) {
+                  filtered = filtered.where((p) => purchasedSet.contains(p.id)).toList();
+                } else if (ownedFilter == SearchOwnedFilter.notPurchased) {
+                  filtered = filtered.where((p) => !purchasedSet.contains(p.id)).toList();
+                }
+
+                if (pushFilter == SearchPushFilter.pushingOnly) {
+                  filtered = filtered.where((p) => pushingSet.contains(p.id)).toList();
+                }
+
+                if (wishFilter == SearchWishFilter.wishedOnly) {
+                  filtered = filtered.where((p) => wishedSet.contains(p.id)).toList();
+                }
+
+                bool matchLevel(dynamic p) {
+                  final lv = (p.level ?? '').toString().toLowerCase();
+                  switch (levelFilter) {
+                    case SearchLevelFilter.all:
+                      return true;
+                    case SearchLevelFilter.l1:
+                      return lv.contains('l1') || lv == '1';
+                    case SearchLevelFilter.l2:
+                      return lv.contains('l2') || lv == '2';
+                    case SearchLevelFilter.l3:
+                      return lv.contains('l3') || lv == '3';
+                    case SearchLevelFilter.l4:
+                      return lv.contains('l4') || lv == '4';
+                    case SearchLevelFilter.l5:
+                      return lv.contains('l5') || lv == '5';
+                    case SearchLevelFilter.l6:
+                      return lv.contains('l6') || lv == '6';
+                  }
+                }
+
+                filtered = filtered.where(matchLevel).toList();
+
+                // ✅ 再套用舊的 filters 和 sort（保留原有功能）
+                filtered = _applyFiltersAndSort(
+                  products: filtered,
                   filter: filter,
                   sort: sort,
-                  purchasedSet: purchasedSet,
-                  pushingSet: pushingSet,
+                  purchasedSet: purchasedSetOld,
+                  pushingSet: pushingSetOld,
                 );
+
+                // ✅ Filters（只有在有 query 時顯示）
+                Widget filtersBar() {
+                  return SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        FilterChip(
+                          selected: ownedFilter == SearchOwnedFilter.purchased,
+                          label: const Text('已購買'),
+                          onSelected: (v) => ref.read(searchOwnedFilterProvider.notifier).state =
+                              v ? SearchOwnedFilter.purchased : SearchOwnedFilter.all,
+                        ),
+                        const SizedBox(width: 8),
+                        FilterChip(
+                          selected: ownedFilter == SearchOwnedFilter.notPurchased,
+                          label: const Text('未購買'),
+                          onSelected: (v) => ref.read(searchOwnedFilterProvider.notifier).state =
+                              v ? SearchOwnedFilter.notPurchased : SearchOwnedFilter.all,
+                        ),
+                        const SizedBox(width: 8),
+                        FilterChip(
+                          selected: pushFilter == SearchPushFilter.pushingOnly,
+                          label: const Text('推播中'),
+                          onSelected: (v) => ref.read(searchPushFilterProvider.notifier).state =
+                              v ? SearchPushFilter.pushingOnly : SearchPushFilter.all,
+                        ),
+                        const SizedBox(width: 8),
+                        FilterChip(
+                          selected: wishFilter == SearchWishFilter.wishedOnly,
+                          label: const Text('願望清單'),
+                          onSelected: (v) => ref.read(searchWishFilterProvider.notifier).state =
+                              v ? SearchWishFilter.wishedOnly : SearchWishFilter.all,
+                        ),
+                        const SizedBox(width: 8),
+                        _LevelChip(
+                          current: levelFilter,
+                          onChange: (next) =>
+                              ref.read(searchLevelFilterProvider.notifier).state = next,
+                        ),
+                      ],
+                    ),
+                  );
+                }
 
                 // ✅ 篩選/排序控制列
                 Widget filterBar() {
@@ -682,6 +794,9 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                 return Column(
                   children: [
                     filterBar(),
+                    const SizedBox(height: 4),
+                    filtersBar(),
+                    const SizedBox(height: 10),
                     Expanded(
                       child: ListView.separated(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -944,4 +1059,55 @@ class _PseudoRandom implements Random {
 
   @override
   bool nextBool() => nextInt(2) == 0;
+}
+
+class _LevelChip extends StatelessWidget {
+  final SearchLevelFilter current;
+  final ValueChanged<SearchLevelFilter> onChange;
+
+  const _LevelChip({required this.current, required this.onChange});
+
+  @override
+  Widget build(BuildContext context) {
+    String label;
+    switch (current) {
+      case SearchLevelFilter.all:
+        label = '等級';
+        break;
+      case SearchLevelFilter.l1:
+        label = 'L1';
+        break;
+      case SearchLevelFilter.l2:
+        label = 'L2';
+        break;
+      case SearchLevelFilter.l3:
+        label = 'L3';
+        break;
+      case SearchLevelFilter.l4:
+        label = 'L4';
+        break;
+      case SearchLevelFilter.l5:
+        label = 'L5';
+        break;
+      case SearchLevelFilter.l6:
+        label = 'L6';
+        break;
+    }
+
+    return PopupMenuButton<SearchLevelFilter>(
+      onSelected: onChange,
+      itemBuilder: (_) => const [
+        PopupMenuItem(value: SearchLevelFilter.all, child: Text('全部')),
+        PopupMenuItem(value: SearchLevelFilter.l1, child: Text('L1')),
+        PopupMenuItem(value: SearchLevelFilter.l2, child: Text('L2')),
+        PopupMenuItem(value: SearchLevelFilter.l3, child: Text('L3')),
+        PopupMenuItem(value: SearchLevelFilter.l4, child: Text('L4')),
+        PopupMenuItem(value: SearchLevelFilter.l5, child: Text('L5')),
+        PopupMenuItem(value: SearchLevelFilter.l6, child: Text('L6')),
+      ],
+      child: Chip(
+        label: Text(label),
+      ),
+    );
+  }
 }

@@ -10,6 +10,7 @@ import 'widgets/app_background.dart';
 import 'theme/theme_controller.dart';
 import 'theme/app_tokens.dart';
 import 'providers/nav_providers.dart';
+import 'notifications/notification_bootstrapper.dart';
 
 final themeControllerProvider = Provider<ThemeController>((ref) {
   throw UnimplementedError('themeControllerProvider must be overridden');
@@ -28,8 +29,9 @@ class MainScaffold4Tabs extends ConsumerWidget {
       overrides: [
         themeControllerProvider.overrideWithValue(themeController),
       ],
-      child: AppBackground(
-        child: Scaffold(
+      child: NotificationBootstrapper(
+        child: AppBackground(
+          child: Scaffold(
           backgroundColor: Colors.transparent,
           body: IndexedStack(
             index: index,
@@ -93,6 +95,7 @@ class MainScaffold4Tabs extends ConsumerWidget {
                 ),
               ],
             ),
+          ),
           ),
         ),
       ),

@@ -73,6 +73,23 @@ final searchResultsProvider = FutureProvider<List<Product>>((ref) async {
   return ref.watch(v2RepoProvider).searchProductsPrefix(q);
 });
 
+enum SearchOwnedFilter { all, purchased, notPurchased }
+enum SearchPushFilter { all, pushingOnly }
+enum SearchWishFilter { all, wishedOnly }
+enum SearchLevelFilter { all, l1, l2, l3, l4, l5, l6 }
+
+final searchOwnedFilterProvider =
+    StateProvider<SearchOwnedFilter>((ref) => SearchOwnedFilter.all);
+
+final searchPushFilterProvider =
+    StateProvider<SearchPushFilter>((ref) => SearchPushFilter.all);
+
+final searchWishFilterProvider =
+    StateProvider<SearchWishFilter>((ref) => SearchWishFilter.all);
+
+final searchLevelFilterProvider =
+    StateProvider<SearchLevelFilter>((ref) => SearchLevelFilter.all);
+
 // 全部產品 Map（使用 lib/data/models.dart 的 Product，有 topicId）
 final allProductsMapProvider =
     FutureProvider<Map<String, Product>>((ref) async {

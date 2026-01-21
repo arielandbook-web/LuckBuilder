@@ -523,28 +523,37 @@ class CategoryNetflixRailsSection extends ConsumerWidget {
                       padding: const EdgeInsets.all(12),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.max,
                         children: [
-                          Text(p.title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w900,
-                                  color: tokens.textPrimary)),
-                          const SizedBox(height: 6),
-                          Text('${p.topicId} · ${p.level}',
-                              style: TextStyle(
-                                  color: tokens.textSecondary, fontSize: 12)),
-                          if (p.levelGoal != null &&
-                              p.levelGoal!.trim().isNotEmpty) ...[
-                            const SizedBox(height: 6),
-                            Text(p.levelGoal!,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                    color: tokens.textSecondary, fontSize: 12)),
-                          ],
-                          const Spacer(),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(p.title,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w900,
+                                        color: tokens.textPrimary)),
+                                const SizedBox(height: 6),
+                                Text('${p.topicId} · ${p.level}',
+                                    style: TextStyle(
+                                        color: tokens.textSecondary, fontSize: 12)),
+                                if (p.levelGoal != null &&
+                                    p.levelGoal!.trim().isNotEmpty) ...[
+                                  const SizedBox(height: 6),
+                                  Text(p.levelGoal!,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                          color: tokens.textSecondary, fontSize: 12)),
+                                ],
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
                           Align(
                             alignment: Alignment.bottomRight,
                             child: Text('查看 ›',

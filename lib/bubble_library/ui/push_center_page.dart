@@ -10,6 +10,8 @@ import '../../notifications/skip_next_store.dart';
 import 'push_product_config_page.dart';
 import 'widgets/bubble_card.dart';
 import 'widgets/push_inbox_section.dart';
+import '../../../pages/push_inbox_page.dart';
+import '../../../pages/push_timeline_page.dart';
 
 final dndFuture = FutureProvider.autoDispose<DndSettings>((ref) async {
   final uid = ref.read(uidProvider);
@@ -31,6 +33,20 @@ class PushCenterPage extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('推播中心'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.inbox_outlined),
+            tooltip: '推播收件匣',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const PushInboxPage()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.timeline),
+            tooltip: '未來 3 天時間表',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const PushTimelinePage()),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () async {
@@ -166,11 +182,7 @@ class PushCenterPage extends ConsumerWidget {
                                     ? null
                                     : () async {
                                         final uid = ref.read(uidProvider);
-                                        await SkipNextStore.setSkip(
-                                          uid: uid,
-                                          productId: pid,
-                                          contentItemId: cid,
-                                        );
+                                        await SkipNextStore.add(uid, cid);
 
                                         await PushOrchestrator.rescheduleNextDays(
                                             ref: ref, days: 3);

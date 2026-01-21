@@ -139,19 +139,19 @@ class AppThemes {
       bg: bg,
       bgGradient: null, // 純白就不要漸層
       primary: primary,
-      textPrimary: const Color(0xFF111827),
-      textSecondary: const Color(0xFF6B7280),
-      cardBg: const Color(0xFFFFFFFF),
-      cardBorder: const Color(0xFFEEF1F6),
+      textPrimary: Color(0xFF111827),
+      textSecondary: Color(0xFF6B7280),
+      cardBg: Color(0xFFFFFFFF),
+      cardBorder: Color(0xFFEEF1F6),
       cardRadius: 22,
-      cardShadow: const [
+      cardShadow: [
         BoxShadow(
           color: Color.fromRGBO(0, 0, 0, 0.08),
           blurRadius: 24,
           offset: Offset(0, 10),
         ),
       ],
-      cardGradient: const LinearGradient(
+      cardGradient: LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
         colors: [
@@ -159,8 +159,8 @@ class AppThemes {
           Color(0xFFF8FCFC),
         ],
       ),
-      chipBg: const Color(0xFFF5F7FB),
-      chipGradient: const LinearGradient(
+      chipBg: Color(0xFFF5F7FB),
+      chipGradient: LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
         colors: [
@@ -168,8 +168,8 @@ class AppThemes {
           Color(0xFFE8F5F3),
         ],
       ),
-      navBg: const Color.fromRGBO(255, 255, 255, 0.92),
-      navGradient: const LinearGradient(
+      navBg: Color.fromRGBO(255, 255, 255, 0.92),
+      navGradient: LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: [
@@ -177,7 +177,7 @@ class AppThemes {
           Color.fromRGBO(255, 255, 255, 0.95),
         ],
       ),
-      buttonGradient: const LinearGradient(
+      buttonGradient: LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
         colors: [
@@ -185,7 +185,7 @@ class AppThemes {
           Color(0xFF1FB8A8),
         ],
       ),
-      searchBarGradient: const LinearGradient(
+      searchBarGradient: LinearGradient(
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
         colors: [

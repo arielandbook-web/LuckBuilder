@@ -9,6 +9,7 @@ import 'bubble_library/notifications/timezone_init.dart';
 import 'bubble_library/bootstrapper.dart';
 import 'theme/theme_controller.dart';
 import 'theme/app_themes.dart';
+import 'navigation/app_nav.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -49,6 +50,7 @@ class MyApp extends StatelessWidget {
         animation: themeController,
         builder: (_, __) {
           return MaterialApp(
+            navigatorKey: rootNavKey,
             title: 'Learning Bubble',
             debugShowCheckedModeBanner: false,
             theme: AppThemes.byId(themeController.id),

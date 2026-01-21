@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'scheduled_push_cache.dart';
+import '../../notifications/notification_inbox_store.dart';
+import 'push_orchestrator.dart';
 
 class NotificationService {
   static final NotificationService _i = NotificationService._();
@@ -18,9 +20,11 @@ class NotificationService {
   static const String actionSnooze = 'ACTION_SNOOZE';
   static const String actionDisableProduct = 'ACTION_DISABLE_PRODUCT';
 
-  Future<void> init(
-      {required void Function(String? payload, String? actionId)
-          onSelect}) async {
+  Future<void> init({
+    required String uid,
+    void Function(Map<String, dynamic> data)? onTap,
+    void Function(String? payload, String? actionId)? onSelect,
+  }) async {
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
 
     final iosInit = DarwinInitializationSettings(
@@ -43,12 +47,45 @@ class NotificationService {
     final initSettings =
         InitializationSettings(android: androidInit, iOS: iosInit);
 
+    Future<void> handlePayload(String? payload) async {
+      final data = PushOrchestrator.decodePayload(payload);
+      if (data == null) return;
+
+      // ✅ 自動已讀（收件匣）
+      if (data['type'] == 'bubble') {
+        final pid = (data['productId'] ?? '').toString();
+        final cid = (data['contentItemId'] ?? '').toString();
+        if (pid.isNotEmpty && cid.isNotEmpty) {
+          await NotificationInboxStore.markOpened(
+            uid: uid,
+            productId: pid,
+            contentItemId: cid,
+          );
+        }
+      }
+
+      onTap?.call(data);
+    }
+
     await plugin.initialize(
       initSettings,
-      onDidReceiveNotificationResponse: (resp) =>
-          onSelect(resp.payload, resp.actionId),
+      onDidReceiveNotificationResponse: (resp) async {
+        await handlePayload(resp.payload);
+
+        // 調用舊的 onSelect 回調（向後兼容）
+        if (onSelect != null) {
+          onSelect(resp.payload, resp.actionId);
+        }
+      },
       onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
     );
+
+    // ✅ 冷啟動：App 是被通知點開的
+    final launch = await plugin.getNotificationAppLaunchDetails();
+    if (launch?.didNotificationLaunchApp == true) {
+      final resp = launch!.notificationResponse;
+      await handlePayload(resp?.payload);
+    }
 
     await plugin
         .resolvePlatformSpecificImplementation<
@@ -57,8 +94,8 @@ class NotificationService {
   }
 
   @pragma('vm:entry-point')
-  static void notificationTapBackground(NotificationResponse resp) {
-    // optional
+  static void notificationTapBackground(NotificationResponse response) {
+    // 這裡不要做 heavy work；真正導頁交給 init 後的 onTap
   }
 
   Future<void> cancelAll() async {

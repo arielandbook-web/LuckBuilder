@@ -24,21 +24,29 @@ class _BubbleBootstrapperState extends ConsumerState<BubbleBootstrapper> {
     if (_inited) return;
     _inited = true;
 
+    // 未登入時直接不處理（避免 crash）
+    String uid;
+    try {
+      uid = ref.read(uidProvider);
+    } catch (_) {
+      return;
+    }
+
     final ns = NotificationService();
-    ns.init(onSelect: (payload, actionId) async {
-      final data = PushOrchestrator.decodePayload(payload);
-      if (data == null) return;
+    ns.init(
+      uid: uid,
+      onTap: (data) {
+        // 導航等邏輯在這裡處理
+        // 目前先不做導航，只保留原有的 onSelect 邏輯
+      },
+      onSelect: (payload, actionId) async {
+        final data = PushOrchestrator.decodePayload(payload);
+        if (data == null) return;
 
-      final productId = data['productId'] as String?;
-      final contentItemId = data['contentItemId'] as String?;
+        // 注意：自動標記已讀已在 NotificationService.init 內部處理
 
-      // 未登入時直接不處理（避免 crash）
-      String uid;
-      try {
-        uid = ref.read(uidProvider);
-      } catch (_) {
-        return;
-      }
+        final productId = data['productId'] as String?;
+        final contentItemId = data['contentItemId'] as String?;
 
       final repo = ref.read(libraryRepoProvider);
 

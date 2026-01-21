@@ -14,10 +14,14 @@ class ProductLibraryPage extends ConsumerStatefulWidget {
   final String productId;
   final bool isWishlistPreview;
 
+  // ✅ 新增：指定要跳到哪一張 content
+  final String? initialContentItemId;
+
   const ProductLibraryPage({
     super.key,
     required this.productId,
     required this.isWishlistPreview,
+    this.initialContentItemId,
   });
 
   @override
@@ -25,6 +29,35 @@ class ProductLibraryPage extends ConsumerStatefulWidget {
 }
 
 class _ProductLibraryPageState extends ConsumerState<ProductLibraryPage> {
+  final Map<String, GlobalKey> _itemKeys = {};
+  bool _didJump = false;
+  int _jumpAttempts = 0;
+
+  void _tryJumpToTarget() {
+    final targetId = widget.initialContentItemId;
+    if (targetId == null || targetId.isEmpty) return;
+    if (_didJump) return;
+    if (_jumpAttempts >= 8) return; // 避免無限嘗試
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final key = _itemKeys[targetId];
+      final ctx = key?.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeOutCubic,
+          alignment: 0.15, // 讓目標卡片偏上，視覺更舒服
+        );
+        _didJump = true;
+        return;
+      }
+      _jumpAttempts += 1;
+      // 下一次 build 再試
+      if (mounted) setState(() {});
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -61,6 +94,9 @@ class _ProductLibraryPageState extends ConsumerState<ProductLibraryPage> {
 
               return savedAsync.when(
                 data: (savedMap) {
+                  // ✅ 嘗試跳轉到目標 content
+                  _tryJumpToTarget();
+
                   return ListView(
                     padding: const EdgeInsets.all(12),
                     children: [
@@ -96,7 +132,14 @@ class _ProductLibraryPageState extends ConsumerState<ProductLibraryPage> {
                       const SizedBox(height: 12),
                       ...showItems.map((it) {
                         final saved = savedMap[it.id];
-                        return Padding(
+
+                        // ✅ 每張卡都給一個 GlobalKey，讓 ensureVisible 找得到
+                        final k = _itemKeys.putIfAbsent(it.id, () => GlobalKey());
+
+                        final isTarget = (it.id == widget.initialContentItemId);
+
+                        // 原本的卡片 widget
+                        final original = Padding(
                           padding: const EdgeInsets.only(bottom: 10),
                           child: BubbleCard(
                             onTap: () => Navigator.of(context).push(
@@ -105,6 +148,25 @@ class _ProductLibraryPageState extends ConsumerState<ProductLibraryPage> {
                                       DetailPage(contentItemId: it.id)),
                             ),
                             child: _contentCard(ref, it, saved),
+                          ),
+                        );
+
+                        // 可選：目標卡片加一個淡淡外框，讓使用者知道「跳到這張」
+                        return Container(
+                          key: k, // ✅ GlobalKey 要掛在真正的 Element 上，ensureVisible 才抓得到 context
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 250),
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(16),
+                              border: isTarget
+                                  ? Border.all(
+                                      width: 1.5,
+                                      color: Colors.blue.withValues(alpha: 0.5),
+                                    )
+                                  : null,
+                            ),
+                            child: original,
                           ),
                         );
                       }),
