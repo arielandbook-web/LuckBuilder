@@ -2,14 +2,17 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../collections/collections_controller.dart';
 import '../providers/providers.dart';
 import '../models/product.dart';
 import '../models/push_config.dart';
 import '../notifications/push_orchestrator.dart';
 import '../notifications/scheduled_push_cache.dart';
+import 'collections_manage_page.dart';
 import 'product_library_page.dart';
 import 'push_center_page.dart';
 import 'push_product_config_page.dart';
+import 'widgets/bubble_card.dart';
 import '../../widgets/rich_sections/sections/library_rich_card.dart';
 import '../../widgets/rich_sections/user_learning_store.dart';
 import '../../../theme/app_tokens.dart';
@@ -38,6 +41,7 @@ class BubbleLibraryPage extends ConsumerStatefulWidget {
 
 class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
   LibraryTab tab = LibraryTab.purchased;
+  String? selectedCollectionId;
 
   @override
   Widget build(BuildContext context) {
@@ -122,8 +126,8 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
                         }
 
                         // Favorites
-                        return _buildFavoritesTab(context, visibleLib,
-                            visibleWish, productsMap, scheduled);
+                        return _buildFavoritesTab(
+                            context, visibleLib, visibleWish, productsMap);
                       },
                       loading: () =>
                           const Center(child: CircularProgressIndicator()),
@@ -436,35 +440,7 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
     List<dynamic> visibleLib,
     List<dynamic> visibleWish,
     Map<String, Product> productsMap,
-    List<ScheduledPushEntry> scheduled,
   ) {
-    // Helper: 根據 productId 找最早的排程項目
-    ScheduledPushEntry? nextEntryFor(String productId) {
-      final list = scheduled
-          .where((s) => s.payload['productId']?.toString() == productId)
-          .toList();
-      if (list.isEmpty) return null;
-      list.sort((a, b) => a.when.compareTo(b.when));
-      return list.first;
-    }
-
-    String fmtNextTime(DateTime dt) {
-      final hh = dt.hour.toString().padLeft(2, '0');
-      final mm = dt.minute.toString().padLeft(2, '0');
-      return '$hh:$mm';
-    }
-
-    String? extractDayFromBody(String body) {
-      final firstLine = body.split('\n').first;
-      final m = RegExp(r'Day\s+(\d+)/365').firstMatch(firstLine);
-      return m?.group(1);
-    }
-
-    String latestTitleText(ScheduledPushEntry e) {
-      final day = extractDayFromBody(e.body);
-      return day == null ? '下一則：${e.title}' : '下一則：${e.title}（Day $day）';
-    }
-
     final favPids = <String>{};
     for (final lp in visibleLib) {
       if (lp.isFavorite) favPids.add(lp.productId);
@@ -474,6 +450,62 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
     }
 
     final favList = favPids.toList();
+    final colsAsync = ref.watch(collectionsControllerProvider);
+
+    Widget collectionsBar() {
+      return colsAsync.when(
+        data: (cols) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Text('收藏集',
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+                  const Spacer(),
+                  TextButton.icon(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const CollectionsManagePage()),
+                    ),
+                    icon: const Icon(Icons.tune, size: 18),
+                    label: const Text('管理'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _colChip(
+                      label: '全部',
+                      selected: selectedCollectionId == null,
+                      onTap: () => setState(() => selectedCollectionId = null),
+                    ),
+                    const SizedBox(width: 8),
+                    ...cols.map((c) => Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: _colChip(
+                            label: '${c.name} (${c.productIds.length})',
+                            selected: selectedCollectionId == c.id,
+                            onTap: () =>
+                                setState(() => selectedCollectionId = c.id),
+                          ),
+                        )),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+          );
+        },
+        loading: () => const SizedBox.shrink(),
+        error: (_, __) => const SizedBox.shrink(),
+      );
+    }
+
     if (favList.isEmpty) {
       return Center(
         child: Column(
@@ -498,125 +530,156 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
       );
     }
 
+    // 若選了收藏集，就只顯示該收藏集內的 fav
+    final cols = colsAsync.value ?? [];
+    final selected = selectedCollectionId == null
+        ? null
+        : cols.where((e) => e.id == selectedCollectionId).firstOrNull;
+
+    final filteredFavList = selected == null
+        ? favList
+        : favList.where((pid) => selected.productIds.contains(pid)).toList();
+
     return ListView.separated(
       padding: const EdgeInsets.all(12),
-      itemCount: favList.length,
+      itemCount: filteredFavList.length + 1,
       separatorBuilder: (_, __) => const SizedBox(height: 10),
       itemBuilder: (ctx, i) {
-        final pid = favList[i];
-        final product = productsMap[pid]!;
+        if (i == 0) return collectionsBar();
+
+        final pid = filteredFavList[i - 1];
+        final title = productsMap[pid]!.title;
         final lp = visibleLib.where((e) => e.productId == pid).firstOrNull;
         final isPurchased = lp != null;
-        final uid2 = ref.read(uidProvider);
-        final tokens = ctx.tokens;
-        final entry = isPurchased ? nextEntryFor(pid) : null;
 
-        // 找到 wishlist item
-        final w = visibleWish.where((e) => e.productId == pid).firstOrNull;
-        final favOn = lp?.isFavorite ?? w?.isFavorite ?? true;
-
-        // 本週完成度（真資料，僅已購買）
-        final weeklyText = isPurchased
-            ? ref.watch(weeklyCountProvider(pid)).when(
-                  data: (c) => '本週完成度：$c/7',
-                  loading: () => '本週完成度：…',
-                  error: (_, __) => '本週完成度：—',
-                )
-            : '相符標籤：美學 · 健康（示意）';
-
-        return LibraryRichCard(
-          title: product.title,
-          subtitle: isPurchased ? '已購買 · 可推播' : '未購買 · 願望清單',
-          coverImageUrl: null,
-          nextPushText: isPurchased
-              ? (entry == null
-                  ? '未來 3 天尚未排程'
-                  : '下一則：${fmtNextTime(entry.when)}')
-              : '尚未解鎖推播',
-          weeklyProgress: weeklyText,
-          latestTitle: isPurchased
-              ? (entry == null ? '下一則：尚未排程' : latestTitleText(entry))
-              : '免費預覽：第 1 則內容標題（示意）',
-          headerTrailing: PopupMenuButton<String>(
-            icon: Icon(Icons.more_horiz, color: tokens.textSecondary),
-            onSelected: (v) async {
-              final repo = ref.read(libraryRepoProvider);
-              if (v == 'fav') {
-                await repo.setProductFavorite(uid2, pid, !favOn);
-              } else if (v == 'removeWish' && !isPurchased) {
-                await repo.removeWishlist(uid2, pid);
-              } else if (v == 'push' && isPurchased) {
-                // ignore: use_build_context_synchronously
-                Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => PushProductConfigPage(productId: pid),
-                ));
-              }
-            },
-            itemBuilder: (_) => [
-              PopupMenuItem(
-                value: 'fav',
-                child: Row(
-                  children: [
-                    Icon(favOn ? Icons.star : Icons.star_border),
-                    const SizedBox(width: 10),
-                    Text(favOn ? '移除最愛' : '加入最愛'),
-                  ],
+        return BubbleCard(
+          onTap: () {
+            Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => ProductLibraryPage(
+                  productId: pid, isWishlistPreview: !isPurchased),
+            ));
+          },
+          child: Row(
+            children: [
+              const Icon(Icons.star, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                  child: Text(title,
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w700))),
+              Text(isPurchased ? '已購買' : '未購買',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.7))),
+              IconButton(
+                tooltip: '加入收藏集',
+                icon: const Icon(Icons.playlist_add),
+                onPressed: () => _openCollectionPicker(
+                  context: context,
+                  productId: pid,
                 ),
               ),
-              if (isPurchased)
-                const PopupMenuItem(
-                  value: 'push',
-                  child: Row(
-                    children: [
-                      Icon(Icons.notifications_active_outlined),
-                      SizedBox(width: 10),
-                      Text('推播設定'),
-                    ],
-                  ),
-                ),
-              if (!isPurchased)
-                const PopupMenuItem(
-                  value: 'removeWish',
-                  child: Row(
-                    children: [
-                      Icon(Icons.delete_outline),
-                      SizedBox(width: 10),
-                      Text('移除收藏'),
-                    ],
-                  ),
-                ),
             ],
           ),
-          onLearnNow: () async {
-            if (isPurchased) {
-              await UserLearningStore().markLearnedTodayAndGlobal(pid);
-              ref.invalidate(weeklyCountProvider(pid));
-            }
-            // ignore: use_build_context_synchronously
-            ScaffoldMessenger.of(context)
-                .showSnackBar(const SnackBar(content: Text('已記錄：今天完成 1 次學習')));
-          },
-          onMakeUpToday: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(isPurchased ? '補學今天（示意）' : '導向購買（示意）')));
-          },
-          onPreview3Days: () {
-            Navigator.of(context).push(MaterialPageRoute(
-              builder: (_) => ProductLibraryPage(
-                  productId: pid, isWishlistPreview: !isPurchased),
-            ));
-          },
-          onTap: () async {
-            if (isPurchased) {
-              await UserLearningStore().markLearnedTodayAndGlobal(pid);
-              ref.invalidate(weeklyCountProvider(pid));
-            }
-            // ignore: use_build_context_synchronously
-            Navigator.of(context).push(MaterialPageRoute(
-              builder: (_) => ProductLibraryPage(
-                  productId: pid, isWishlistPreview: !isPurchased),
-            ));
-          },
+        );
+      },
+    );
+  }
+
+  Widget _colChip(
+      {required String label,
+      required bool selected,
+      required VoidCallback onTap}) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(999),
+          color: selected
+              ? Colors.white.withValues(alpha: 0.16)
+              : Colors.white.withValues(alpha: 0.08),
+          border: Border.all(
+              color: selected
+                  ? Colors.white.withValues(alpha: 0.35)
+                  : Colors.white.withValues(alpha: 0.12)),
+        ),
+        child: Text(label,
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.92),
+                fontSize: 12,
+                fontWeight: FontWeight.w800)),
+      ),
+    );
+  }
+
+  Future<void> _openCollectionPicker({
+    required BuildContext context,
+    required String productId,
+  }) async {
+    final ctrl = ref.read(collectionsControllerProvider.notifier);
+    final cols = ref.read(collectionsControllerProvider).value ?? [];
+
+    await showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (_) {
+        final nameCtl = TextEditingController();
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('加入/移出收藏集',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 10),
+                if (cols.isEmpty)
+                  const Text('尚無收藏集，先建立一個吧～')
+                else
+                  ...cols.map((c) {
+                    final has = c.productIds.contains(productId);
+                    return CheckboxListTile(
+                      value: has,
+                      onChanged: (_) async {
+                        await ctrl.toggleProduct(
+                            collectionId: c.id, productId: productId);
+                        if (context.mounted) Navigator.pop(context);
+                      },
+                      title: Text(c.name),
+                      subtitle: Text('包含 ${c.productIds.length} 個'),
+                    );
+                  }),
+                const Divider(height: 20),
+                TextField(
+                  controller: nameCtl,
+                  decoration: const InputDecoration(
+                    labelText: '建立新收藏集',
+                    hintText: '例如：睡前 10 分鐘',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () async {
+                      await ctrl.create(nameCtl.text);
+                      final list =
+                          ref.read(collectionsControllerProvider).value ?? [];
+                      if (list.isNotEmpty) {
+                        await ctrl.toggleProduct(
+                            collectionId: list.first.id, productId: productId);
+                      }
+                      if (context.mounted) Navigator.pop(context);
+                    },
+                    child: const Text('建立並加入'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+            ),
+          ),
         );
       },
     );

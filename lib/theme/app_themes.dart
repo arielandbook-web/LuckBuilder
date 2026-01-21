@@ -135,7 +135,7 @@ class AppThemes {
     const bg = Color(0xFFFFFFFF); // ✅ 純白底
     const primary = Color(0xFF25C9B8);
 
-    final tokens = AppTokens(
+    const tokens = AppTokens(
       bg: bg,
       bgGradient: null, // 純白就不要漸層
       primary: primary,

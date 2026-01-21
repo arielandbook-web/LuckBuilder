@@ -1,50 +1,81 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// 本機記錄「跳過下一則」：存 contentItemId，重排未來 N 天時略過
+/// - 不動後端
+/// - 有效期預設 4 天（涵蓋你 3 天排程窗口）
 class PushSkipStore {
-  static const _prefix = 'push_skip_v1';
+  static const _prefix = 'push_skip_v1_';
 
-  String _key(String productId) => '$_prefix:$productId';
+  static String _key(String uid) => '$_prefix$uid';
 
-  Future<Set<String>> getSkippedIds(String productId) async {
+  /// 結構：{ productId: { contentItemId: expiresAtMillis } }
+  static Future<Map<String, Map<String, int>>> getAll(String uid) async {
     final sp = await SharedPreferences.getInstance();
-    final raw = sp.getString(_key(productId));
-    if (raw == null || raw.isEmpty) return <String>{};
+    final raw = sp.getString(_key(uid));
+    if (raw == null || raw.isEmpty) return {};
+
     try {
-      final list = (jsonDecode(raw) as List).map((e) => e.toString()).toSet();
-      return list;
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      final now = DateTime.now().millisecondsSinceEpoch;
+
+      final out = <String, Map<String, int>>{};
+      bool changed = false;
+
+      for (final entry in decoded.entries) {
+        final pid = entry.key;
+        final inner = (entry.value as Map<String, dynamic>);
+
+        final m = <String, int>{};
+        for (final e in inner.entries) {
+          final cid = e.key;
+          final exp = (e.value as num).toInt();
+          if (exp > now) {
+            m[cid] = exp;
+          } else {
+            changed = true; // 過期清掉
+          }
+        }
+        if (m.isNotEmpty) out[pid] = m;
+      }
+
+      if (changed) {
+        await _save(uid, out);
+      }
+      return out;
     } catch (_) {
-      return <String>{};
+      return {};
     }
   }
 
-  /// 跳過一次：把 contentItemId 加入 skip set
-  Future<void> skipOnce({
+  static Future<void> skip({
+    required String uid,
     required String productId,
     required String contentItemId,
+    int ttlDays = 4,
   }) async {
-    final sp = await SharedPreferences.getInstance();
-    final set = await getSkippedIds(productId);
-    set.add(contentItemId);
-    await sp.setString(_key(productId), jsonEncode(set.toList()));
+    final all = await getAll(uid);
+    final now = DateTime.now();
+    final exp = now.add(Duration(days: ttlDays)).millisecondsSinceEpoch;
+
+    final inner = all[productId] ?? <String, int>{};
+    inner[contentItemId] = exp;
+    all[productId] = inner;
+
+    await _save(uid, all);
   }
 
-  /// 重排時用：把已消耗的 skip 移除（確保只跳過一次）
-  Future<void> consume({
-    required String productId,
-    required Iterable<String> consumedIds,
-  }) async {
+  static Future<void> clearExpired(String uid) async {
+    await getAll(uid); // getAll 會順便清掉
+  }
+
+  static Future<void> _save(
+      String uid, Map<String, Map<String, int>> all) async {
     final sp = await SharedPreferences.getInstance();
-    final set = await getSkippedIds(productId);
-    bool changed = false;
-    for (final id in consumedIds) {
-      changed = set.remove(id) || changed;
+    final jsonMap = <String, dynamic>{};
+    for (final e in all.entries) {
+      jsonMap[e.key] = e.value;
     }
-    if (!changed) return;
-    if (set.isEmpty) {
-      await sp.remove(_key(productId));
-    } else {
-      await sp.setString(_key(productId), jsonEncode(set.toList()));
-    }
+    await sp.setString(_key(uid), jsonEncode(jsonMap));
   }
 }

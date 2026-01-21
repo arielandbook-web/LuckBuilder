@@ -203,8 +203,9 @@ class PushScheduler {
         if (picked == null) continue;
 
         for (final when in enforced) {
-          if (di == 0 && when.isBefore(now.add(const Duration(minutes: 1))))
+          if (di == 0 && when.isBefore(now.add(const Duration(minutes: 1)))) {
             continue;
+          }
           dayCandidates
               .add(PushTask(productId: lp.productId, when: when, item: picked));
         }

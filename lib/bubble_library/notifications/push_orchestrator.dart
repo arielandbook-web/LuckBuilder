@@ -6,6 +6,8 @@ import '../models/user_library.dart';
 import '../providers/providers.dart';
 import 'notification_service.dart';
 import 'push_scheduler.dart';
+import '../../notifications/daily_routine_store.dart';
+import '../../notifications/dnd_settings.dart';
 import '../../notifications/push_skip_store.dart';
 
 class PushOrchestrator {
@@ -25,6 +27,7 @@ class PushOrchestrator {
   }) async {
     // 未登入會 throw，這是刻意的：你只要在登入後觸發一次即可
     final uid = ref.read(uidProvider);
+    final dnd = await DndSettingsStore.load(uid);
 
     final lib = await ref.read(libraryProductsProvider.future);
     final productsMap = await ref.read(productsMapProvider.future);
@@ -44,59 +47,47 @@ class PushOrchestrator {
     }
 
     // 建 library map（只保留存在的 product）
-    final libMap = <String, UserLibraryProduct>{};
+    var libMap = <String, UserLibraryProduct>{};
     for (final p in lib) {
       if (!productsMap.containsKey(p.productId)) continue;
       libMap[p.productId] = p;
     }
 
-    // 只抓推播中的 products content（效率好）
+    // 套用「日常順序」：把日常商品放在 map 前面（Dart Map 會保留 insertion order）
+    final routine = await DailyRoutineStore.load(uid);
+    if (routine.orderedProductIds.isNotEmpty) {
+      final ordered = <String, UserLibraryProduct>{};
+      for (final pid in routine.orderedProductIds) {
+        final lp = libMap[pid];
+        if (lp != null) ordered[pid] = lp;
+      }
+      for (final e in libMap.entries) {
+        if (!ordered.containsKey(e.key)) ordered[e.key] = e.value;
+      }
+      libMap = ordered;
+    }
+
+    // 讀取 skip 並只抓推播中的 products content（效率好）
+    final skipAll = await PushSkipStore.getAll(uid);
+
     final contentByProduct = <String, List<dynamic>>{};
     for (final entry in libMap.entries) {
       if (!entry.value.pushEnabled || entry.value.isHidden) continue;
+
       final list = await ref.read(contentByProductProvider(entry.key).future);
-      contentByProduct[entry.key] = list;
-    }
 
-    // ===== Skip 下一則：在重排前先把被跳過的 contentItem 從列表移除（等於跳過一次） =====
-    final skipStore = PushSkipStore();
-    final consumedByProduct = <String, List<String>>{};
-
-    for (final entry in contentByProduct.entries) {
-      final productId = entry.key;
-      final list = entry.value;
-
-      final skipped = await skipStore.getSkippedIds(productId);
-      if (skipped.isEmpty) continue;
-
-      final consumed = <String>[];
-
-      // 兼容 item 可能是 model（.id）或 map（['id']）
-      list.removeWhere((item) {
-        String? id;
+      final skipSet = (skipAll[entry.key] ?? {}).keys.toSet();
+      final filtered = list.where((it) {
         try {
-          final dyn = item as dynamic;
-          if (dyn != null) {
-            final v = dyn.id;
-            if (v != null) id = v.toString();
-          }
-        } catch (_) {}
-        if (id == null && item is Map) {
-          final v = item['id'];
-          if (v != null) id = v.toString();
+          final id = (it as dynamic).id?.toString();
+          if (id == null) return true;
+          return !skipSet.contains(id);
+        } catch (_) {
+          return true;
         }
+      }).toList();
 
-        if (id == null) return false;
-        if (skipped.contains(id)) {
-          consumed.add(id);
-          return true; // 移除 => 這次重排就會跳過它
-        }
-        return false;
-      });
-
-      if (consumed.isNotEmpty) {
-        consumedByProduct[productId] = consumed;
-      }
+      contentByProduct[entry.key] = filtered;
     }
 
     final tasks = PushScheduler.buildSchedule(
@@ -112,17 +103,18 @@ class PushOrchestrator {
     final ns = NotificationService();
     await ns.cancelAll();
 
-    // 已在本次重排中移除（跳過）的項目：消耗掉，避免下次一直跳同一則
-    for (final e in consumedByProduct.entries) {
-      await skipStore.consume(productId: e.key, consumedIds: e.value);
-    }
-
     int idSeed = DateTime.now().millisecondsSinceEpoch.remainder(1000000);
+    DateTime? prevWhen;
 
     for (final t in tasks) {
-      final productTitle = productsMap[t.productId]?.title ?? t.productId;
+      final scheduledAt = adjustWhen(
+        original: t.when,
+        s: dnd,
+        prev: prevWhen,
+      );
+      prevWhen = scheduledAt;
 
-      // banner/展開都像「學習卡」
+      final productTitle = productsMap[t.productId]?.title ?? t.productId;
       final title =
           t.item.anchorGroup.isNotEmpty ? t.item.anchorGroup : productTitle;
       final subtitle =
@@ -138,7 +130,7 @@ class PushOrchestrator {
 
       await ns.schedule(
         id: idSeed++,
-        when: t.when,
+        when: scheduledAt,
         title: title,
         body: body,
         payload: payload,

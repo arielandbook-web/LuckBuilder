@@ -64,6 +64,21 @@ final searchResultsProvider = FutureProvider<List<Product>>((ref) async {
   return ref.watch(v2RepoProvider).searchProductsPrefix(q);
 });
 
+// 全部產品 Map（使用 lib/data/models.dart 的 Product，有 topicId）
+final allProductsMapProvider =
+    FutureProvider<Map<String, Product>>((ref) async {
+  final snap = await FirebaseFirestore.instance
+      .collection('products')
+      .where('published', isEqualTo: true)
+      .get();
+
+  final map = <String, Product>{};
+  for (final d in snap.docs) {
+    map[d.id] = Product.fromDoc(d.id, d.data());
+  }
+  return map;
+});
+
 // 本週新泡泡（已上架：order 倒序）
 final newArrivalsProvider = FutureProvider<List<Product>>((ref) async {
   final snap = await FirebaseFirestore.instance

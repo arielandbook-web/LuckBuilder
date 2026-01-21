@@ -10,6 +10,7 @@ import '../ui/rich_sections/home_today_task_section.dart';
 import '../ui/rich_sections/home_continue_section.dart';
 import '../ui/rich_sections/home_status_section.dart';
 import '../widgets/rich_sections/sections/home_for_you_section.dart';
+import '../widgets/rich_sections/sections/home_new_and_coming_section.dart';
 import '../widgets/rich_sections/user_learning_store.dart';
 import '../bubble_library/ui/product_library_page.dart';
 import 'product_page.dart';
@@ -22,7 +23,8 @@ class HomePage extends ConsumerWidget {
     final banners = ref.watch(bannerProductsProvider);
     final weekly = ref.watch(featuredProductsProvider('weekly_pick'));
     final hot = ref.watch(featuredProductsProvider('hot_all'));
-    final newArrivals = ref.watch(newArrivalsProvider);
+    final newArrivals = ref.watch(featuredProductsProvider('new_arrivals'));
+    final comingSoon = ref.watch(featuredProductsProvider('coming_soon'));
     final tokens = context.tokens;
 
     return SafeArea(
@@ -71,10 +73,6 @@ class HomePage extends ConsumerWidget {
 
           // 學習狀態區塊
           const HomeStatusSection(),
-          const SizedBox(height: 12),
-
-          // 為你推薦
-          const HomeForYouSection(),
           const SizedBox(height: 18),
 
           // 本週新泡泡
@@ -84,11 +82,13 @@ class HomePage extends ConsumerWidget {
                 ? AppCard(
                     child: Padding(
                       padding: const EdgeInsets.all(16),
-                      child: Text('本週新泡泡: 無資料',
-                          style: TextStyle(color: tokens.textSecondary)),
+                      child: Text(
+                        '本週新泡泡: 無資料（請檢查 Firestore featured_lists/new_arrivals）',
+                        style: TextStyle(color: tokens.textSecondary),
+                      ),
                     ),
                   )
-                : _Rail(products: ps),
+                : _Rail(products: ps, ctaText: '新上架'),
             loading: () => const SizedBox(
                 height: 210, child: Center(child: CircularProgressIndicator())),
             error: (err, stack) => AppCard(
@@ -102,18 +102,63 @@ class HomePage extends ConsumerWidget {
                             color: tokens.textPrimary,
                             fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
-                    Text(
-                      '$err',
-                      style:
-                          TextStyle(color: tokens.textSecondary, fontSize: 12),
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    Text('$err',
+                        style: TextStyle(
+                            color: tokens.textSecondary, fontSize: 12),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis),
                   ],
                 ),
               ),
             ),
           ),
+          const SizedBox(height: 18),
+
+          // 即將上架
+          const _Section(title: '即將上架'),
+          comingSoon.when(
+            data: (ps) => ps.isEmpty
+                ? AppCard(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        '即將上架: 無資料（請檢查 Firestore featured_lists/coming_soon）',
+                        style: TextStyle(color: tokens.textSecondary),
+                      ),
+                    ),
+                  )
+                : _Rail(products: ps, ctaText: '即將上架'),
+            loading: () => const SizedBox(
+                height: 210, child: Center(child: CircularProgressIndicator())),
+            error: (err, stack) => AppCard(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('即將上架錯誤:',
+                        style: TextStyle(
+                            color: tokens.textPrimary,
+                            fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 4),
+                    Text('$err',
+                        style: TextStyle(
+                            color: tokens.textSecondary, fontSize: 12),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+
+          // 為你推薦
+          const HomeForYouSection(),
+          const SizedBox(height: 18),
+
+          // 本週新泡泡 + 即將上架
+          const HomeNewAndComingSection(),
           const SizedBox(height: 18),
 
           // Banner 1~3
@@ -391,7 +436,8 @@ class _BannerCard extends StatelessWidget {
 
 class _Rail extends StatelessWidget {
   final List<Product> products;
-  const _Rail({required this.products});
+  final String ctaText;
+  const _Rail({required this.products, this.ctaText = '訂閱解鎖'});
 
   @override
   Widget build(BuildContext context) {
@@ -464,11 +510,12 @@ class _Rail extends StatelessWidget {
                                         TextStyle(color: tokens.textSecondary)),
                                 const SizedBox(height: 4),
                                 Align(
-                                    alignment: Alignment.bottomRight,
-                                    child: Text('訂閱解鎖',
-                                        style: TextStyle(
-                                            color: tokens.primary,
-                                            fontWeight: FontWeight.w600))),
+                                  alignment: Alignment.bottomRight,
+                                  child: Text(ctaText,
+                                      style: TextStyle(
+                                          color: tokens.primary,
+                                          fontWeight: FontWeight.w600)),
+                                ),
                               ],
                             ),
                           ),

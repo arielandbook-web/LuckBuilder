@@ -1,16 +1,58 @@
-import 'dart:async';
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../providers/v2_providers.dart';
 import '../widgets/app_card.dart';
 import '../theme/app_tokens.dart';
 import '../ui/rich_sections/user_state_store.dart';
 import '../ui/rich_sections/search_history_section.dart';
 import '../ui/rich_sections/search_suggestions_section.dart';
-import '../bubble_library/providers/providers.dart';
-import '../widgets/rich_sections/search/search_filters.dart';
-import '../widgets/rich_sections/user_learning_store.dart';
 import 'product_page.dart';
+
+// ✅ 若你專案有這個 provider（泡泡庫在用），就能做「已購買/推播中」篩選。
+// 沒登入或不存在會自動 fallback，不會影響搜尋基本功能。
+import '../bubble_library/providers/providers.dart' as v1;
+
+enum SearchSort { relevant, title, level }
+
+class _SearchFilterState {
+  final Set<String> topicIds; // 多選
+  final Set<String> levels; // 多選
+  final bool onlyPurchased;
+  final bool onlyPushing;
+
+  const _SearchFilterState({
+    this.topicIds = const {},
+    this.levels = const {},
+    this.onlyPurchased = false,
+    this.onlyPushing = false,
+  });
+
+  bool get isEmpty =>
+      topicIds.isEmpty && levels.isEmpty && !onlyPurchased && !onlyPushing;
+
+  _SearchFilterState copyWith({
+    Set<String>? topicIds,
+    Set<String>? levels,
+    bool? onlyPurchased,
+    bool? onlyPushing,
+  }) {
+    return _SearchFilterState(
+      topicIds: topicIds ?? this.topicIds,
+      levels: levels ?? this.levels,
+      onlyPurchased: onlyPurchased ?? this.onlyPurchased,
+      onlyPushing: onlyPushing ?? this.onlyPushing,
+    );
+  }
+}
+
+final _searchFilterProvider =
+    StateProvider<_SearchFilterState>((ref) => const _SearchFilterState());
+
+final _searchSortProvider =
+    StateProvider<SearchSort>((ref) => SearchSort.relevant);
 
 class SearchPage extends ConsumerStatefulWidget {
   const SearchPage({super.key});
@@ -23,7 +65,58 @@ class _SearchPageState extends ConsumerState<SearchPage> {
   final _store = UserStateStore();
   final _searchController = TextEditingController();
   final _historyKey = GlobalKey<SearchHistorySectionState>();
-  SearchFilters _filters = const SearchFilters();
+
+  List<String> _recentCache = const [];
+
+  int _trendSeed = DateTime.now().millisecondsSinceEpoch;
+
+  void _shuffleTrends() {
+    setState(() => _trendSeed = DateTime.now().millisecondsSinceEpoch);
+  }
+
+  List<String> _trendKeywords() {
+    final base = <String>[
+      'AI',
+      '宇宙',
+      '美學',
+      '健身',
+      '理財',
+      '心理學',
+      '自我成長',
+      '習慣養成',
+      '學習方法',
+      '效率',
+      '睡眠',
+      '飲食',
+      '職場',
+      '親子',
+      '情緒',
+      '冥想',
+      '記憶法',
+      '專注力',
+      '時間管理',
+      '英語',
+    ];
+    base.shuffle(_PseudoRandom(_trendSeed));
+    return base.take(10).toList();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRecentCache();
+  }
+
+  Future<void> _loadRecentCache() async {
+    try {
+      final list = await _store.getRecentSearches();
+      if (!mounted) return;
+      setState(() => _recentCache = list.cast<String>());
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _recentCache = const []);
+    }
+  }
 
   @override
   void dispose() {
@@ -36,8 +129,342 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     await _store.addRecentSearch(q);
     ref.read(searchQueryProvider.notifier).state = q;
     _searchController.text = q;
-    // 重新載入歷史紀錄
     _historyKey.currentState?.reload();
+    await _loadRecentCache();
+  }
+
+  // ✅ 安全地取得「已購買/推播中」資訊（沒登入就回空）
+  AsyncValue<List<dynamic>> _watchLibrarySafe(WidgetRef ref) {
+    try {
+      // 未登入會 throw（你專案 uidProvider 是這樣設計的）
+      ref.read(v1.uidProvider);
+      return ref
+          .watch(v1.libraryProductsProvider)
+          .whenData((list) => list.cast<dynamic>());
+    } catch (_) {
+      return const AsyncValue.data(<dynamic>[]);
+    }
+  }
+
+  AsyncValue<List<dynamic>> _watchWishlistSafe(WidgetRef ref) {
+    try {
+      ref.read(v1.uidProvider);
+      return ref
+          .watch(v1.wishlistProvider)
+          .whenData((list) => list.cast<dynamic>());
+    } catch (_) {
+      return const AsyncValue.data(<dynamic>[]);
+    }
+  }
+
+  Set<String> _purchasedSetFromLib(List<dynamic> lib) {
+    final s = <String>{};
+    for (final lp in lib) {
+      try {
+        final pid = (lp as dynamic).productId as String?;
+        if (pid != null) s.add(pid);
+      } catch (_) {}
+    }
+    return s;
+  }
+
+  Set<String> _pushingSetFromLib(List<dynamic> lib) {
+    final s = <String>{};
+    for (final lp in lib) {
+      try {
+        final d = lp as dynamic;
+        final pid = d.productId as String?;
+        final pushing = (d.pushEnabled as bool?) ?? false;
+        if (pid != null && pushing) s.add(pid);
+      } catch (_) {}
+    }
+    return s;
+  }
+
+  List<String> _buildForYouKeywords({
+    required List<String> recent,
+    required List<dynamic> lib,
+    required List<dynamic> wish,
+    required Map<String, dynamic> productsMapDyn,
+    int max = 10,
+  }) {
+    final out = <String>[];
+
+    // 1) 最近搜尋：抽出高頻 token
+    final freq = <String, int>{};
+    for (final q in recent.take(30)) {
+      final parts = q
+          .replaceAll(RegExp(r'[^\w\u4e00-\u9fff ]'), ' ')
+          .split(RegExp(r'\s+'))
+          .map((e) => e.trim())
+          .where((e) => e.length >= 2)
+          .toList();
+      for (final p in parts) {
+        freq[p] = (freq[p] ?? 0) + 1;
+      }
+    }
+    final hotTokens = freq.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    for (final e in hotTokens.take(5)) {
+      out.add(e.key);
+    }
+
+    // 2) 收藏/最愛/推播中 → 推 topicId
+    final topicFreq = <String, int>{};
+    void bumpTopicFromProductId(String? pid, {int w = 1}) {
+      if (pid == null) return;
+      final p = productsMapDyn[pid];
+      if (p == null) return;
+      try {
+        final tid = (p as dynamic).topicId?.toString();
+        if (tid == null || tid.isEmpty) return;
+        topicFreq[tid] = (topicFreq[tid] ?? 0) + w;
+      } catch (_) {}
+    }
+
+    for (final lp in lib) {
+      try {
+        final d = lp as dynamic;
+        final pid = d.productId as String?;
+        final fav = (d.isFavorite as bool?) ?? false;
+        final pushing = (d.pushEnabled as bool?) ?? false;
+        if (fav) bumpTopicFromProductId(pid, w: 3);
+        if (pushing) bumpTopicFromProductId(pid, w: 2);
+      } catch (_) {}
+    }
+    for (final w in wish) {
+      try {
+        final d = w as dynamic;
+        final pid = d.productId as String?;
+        final fav = (d.isFavorite as bool?) ?? false;
+        if (fav) bumpTopicFromProductId(pid, w: 2);
+      } catch (_) {}
+    }
+    final topTopics = topicFreq.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    for (final e in topTopics.take(4)) {
+      out.add(e.key);
+    }
+
+    // 去重 + 限量
+    final seen = <String>{};
+    final dedup = <String>[];
+    for (final k in out) {
+      final kk = k.trim();
+      if (kk.isEmpty) continue;
+      if (seen.add(kk)) dedup.add(kk);
+      if (dedup.length >= max) break;
+    }
+    return dedup;
+  }
+
+  List<dynamic> _applyFiltersAndSort({
+    required List<dynamic> products,
+    required _SearchFilterState filter,
+    required SearchSort sort,
+    required Set<String> purchasedSet,
+    required Set<String> pushingSet,
+  }) {
+    Iterable<dynamic> list = products;
+
+    // filters
+    if (filter.topicIds.isNotEmpty) {
+      list = list.where((p) {
+        final tid = (p as dynamic).topicId?.toString();
+        return tid != null && filter.topicIds.contains(tid);
+      });
+    }
+    if (filter.levels.isNotEmpty) {
+      list = list.where((p) {
+        final lv = (p as dynamic).level?.toString();
+        return lv != null && filter.levels.contains(lv);
+      });
+    }
+    if (filter.onlyPurchased) {
+      list = list.where((p) => purchasedSet.contains((p as dynamic).id));
+    }
+    if (filter.onlyPushing) {
+      list = list.where((p) => pushingSet.contains((p as dynamic).id));
+    }
+
+    final out = list.toList();
+
+    // sort
+    if (sort == SearchSort.title) {
+      out.sort((a, b) {
+        final ta = ((a as dynamic).title ?? '').toString();
+        final tb = ((b as dynamic).title ?? '').toString();
+        return ta.compareTo(tb);
+      });
+    } else if (sort == SearchSort.level) {
+      out.sort((a, b) {
+        final la = ((a as dynamic).level ?? '').toString();
+        final lb = ((b as dynamic).level ?? '').toString();
+        return la.compareTo(lb);
+      });
+    } // relevant: keep original order
+
+    return out;
+  }
+
+  Future<void> _openFilterSheet({
+    required BuildContext context,
+    required List<dynamic> products,
+  }) async {
+    final tokens = context.tokens;
+    final cur = ref.read(_searchFilterProvider);
+
+    // 從「目前結果」萃取可選項
+    final topicIds = <String>{};
+    final levels = <String>{};
+    for (final p in products) {
+      final tid = (p as dynamic).topicId?.toString();
+      final lv = (p as dynamic).level?.toString();
+      if (tid != null && tid.isNotEmpty) topicIds.add(tid);
+      if (lv != null && lv.isNotEmpty) levels.add(lv);
+    }
+    final topicList = topicIds.toList()..sort();
+    final levelList = levels.toList()..sort();
+
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) {
+        return Container(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          decoration: BoxDecoration(
+            color: tokens.cardBg,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            border: Border.all(color: tokens.cardBorder),
+          ),
+          child: StatefulBuilder(
+            builder: (context, setState) {
+              var draft = cur;
+
+              Widget chips({
+                required List<String> items,
+                required Set<String> selected,
+                required void Function(String v) onToggle,
+              }) {
+                if (items.isEmpty) {
+                  return Text('（沒有可用選項）',
+                      style: TextStyle(color: tokens.textSecondary));
+                }
+                return Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: items.map((v) {
+                    final sel = selected.contains(v);
+                    return FilterChip(
+                      selected: sel,
+                      label: Text(v),
+                      onSelected: (_) => setState(() => onToggle(v)),
+                      selectedColor: tokens.primary.withValues(alpha: 0.15),
+                      checkmarkColor: tokens.primary,
+                      labelStyle: TextStyle(
+                        color: sel ? tokens.primary : tokens.textPrimary,
+                        fontWeight: sel ? FontWeight.w800 : FontWeight.w500,
+                      ),
+                      side: BorderSide(
+                          color: sel ? tokens.primary : tokens.cardBorder),
+                      backgroundColor: tokens.chipBg,
+                    );
+                  }).toList(),
+                );
+              }
+
+              return SafeArea(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text('篩選',
+                            style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                                color: tokens.textPrimary)),
+                        const Spacer(),
+                        TextButton(
+                          onPressed: () => setState(
+                              () => draft = const _SearchFilterState()),
+                          child: const Text('清除'),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          onPressed: () {
+                            ref.read(_searchFilterProvider.notifier).state =
+                                draft;
+                            Navigator.of(context).pop();
+                          },
+                          child: const Text('套用'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      value: draft.onlyPurchased,
+                      onChanged: (v) => setState(() {
+                        draft = draft.copyWith(onlyPurchased: v);
+                      }),
+                      title: Text('只看已購買',
+                          style: TextStyle(color: tokens.textPrimary)),
+                      subtitle: Text('未登入時不影響結果',
+                          style: TextStyle(color: tokens.textSecondary)),
+                    ),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      value: draft.onlyPushing,
+                      onChanged: (v) => setState(() {
+                        draft = draft.copyWith(onlyPushing: v);
+                      }),
+                      title: Text('只看推播中',
+                          style: TextStyle(color: tokens.textPrimary)),
+                      subtitle: Text('需已購買且已開推播',
+                          style: TextStyle(color: tokens.textSecondary)),
+                    ),
+                    const SizedBox(height: 12),
+                    Text('類別（topicId）',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: tokens.textPrimary)),
+                    const SizedBox(height: 8),
+                    chips(
+                      items: topicList,
+                      selected: draft.topicIds,
+                      onToggle: (v) {
+                        final next = {...draft.topicIds};
+                        next.contains(v) ? next.remove(v) : next.add(v);
+                        draft = draft.copyWith(topicIds: next);
+                      },
+                    ),
+                    const SizedBox(height: 14),
+                    Text('等級（level）',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: tokens.textPrimary)),
+                    const SizedBox(height: 8),
+                    chips(
+                      items: levelList,
+                      selected: draft.levels,
+                      onToggle: (v) {
+                        final next = {...draft.levels};
+                        next.contains(v) ? next.remove(v) : next.add(v);
+                        draft = draft.copyWith(levels: next);
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -46,9 +473,16 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     final results = ref.watch(searchResultsProvider);
     final tokens = context.tokens;
 
+    final filter = ref.watch(_searchFilterProvider);
+    final sort = ref.watch(_searchSortProvider);
+
+    // ✅ library 只用於「已購買/推播中」篩選與顯示，不會影響基本搜尋
+    final libAsync = _watchLibrarySafe(ref);
+
     return SafeArea(
       child: Column(
         children: [
+          // Search Bar
           Padding(
             padding: const EdgeInsets.all(16),
             child: AppCard(
@@ -79,128 +513,235 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                             onPressed: () {
                               _searchController.clear();
                               ref.read(searchQueryProvider.notifier).state = '';
+                              ref.read(_searchFilterProvider.notifier).state =
+                                  const _SearchFilterState();
+                              ref.read(_searchSortProvider.notifier).state =
+                                  SearchSort.relevant;
                             },
                           )
                         : null,
                   ),
-                  onChanged: (value) {
-                    ref.read(searchQueryProvider.notifier).state = value;
-                  },
+                  onChanged: (value) =>
+                      ref.read(searchQueryProvider.notifier).state = value,
                   onSubmitted: _submitSearch,
                 ),
               ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                ActionChip(
-                  label: Text(_filters.summaryText()),
-                  onPressed: () async {
-                    final next = await _openFiltersSheet(context);
-                    if (next != null) setState(() => _filters = next);
-                  },
-                ),
-                ActionChip(
-                  label: Text('排序：${_filters.sortText()}'),
-                  onPressed: () async {
-                    final next = await _openFiltersSheet(context);
-                    if (next != null) setState(() => _filters = next);
-                  },
-                ),
-                if (_filters.hasAny)
-                  InputChip(
-                    label: const Text('清除'),
-                    onDeleted: () =>
-                        setState(() => _filters = const SearchFilters()),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
+          // Body
           Expanded(
             child: results.when(
-              data: (products) {
+              data: (productsRaw) {
+                // query empty → show history + suggestions
                 if (query.isEmpty) {
-                  // 顯示歷史記錄和建議區塊
+                  final trends = _trendKeywords();
+                  final wishAsync = _watchWishlistSafe(ref);
+                  final wish = wishAsync.value ?? const <dynamic>[];
+                  final lib = libAsync.value ?? const <dynamic>[];
+
+                  Map<String, dynamic> productsMapDyn = {};
+                  try {
+                    final pmAsync = ref.watch(v1.productsMapProvider);
+                    productsMapDyn = pmAsync.when(
+                      data: (m) => m.map((k, v) => MapEntry(k, v as dynamic)),
+                      loading: () => <String, dynamic>{},
+                      error: (_, __) => <String, dynamic>{},
+                    );
+                  } catch (_) {}
+
+                  final forYou = _buildForYouKeywords(
+                    recent: _recentCache,
+                    lib: lib,
+                    wish: wish,
+                    productsMapDyn: productsMapDyn,
+                  );
+
                   return ListView(
                     children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: SearchHistorySection(
-                          key: _historyKey,
-                          onTapQuery: (q) {
-                            _submitSearch(q);
-                          },
-                        ),
+                      SearchHistorySection(
+                        key: _historyKey,
+                        onTapQuery: (q) => _submitSearch(q),
                       ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: SearchSuggestionsSection(
-                          onTap: (q) {
-                            _submitSearch(q);
-                          },
-                        ),
+                      SearchForYouSection(
+                        keywords: forYou,
+                        onRefresh: _loadRecentCache,
+                        onTap: (q) => _submitSearch(q),
+                      ),
+                      SearchTrendingSection(
+                        keywords: trends,
+                        onRefresh: _shuffleTrends,
+                        onTap: (q) => _submitSearch(q),
+                      ),
+                      SearchSuggestionsSection(
+                        onTap: (q) => _submitSearch(q),
                       ),
                       const SizedBox(height: 24),
                     ],
                   );
                 }
 
-                // 篩選/排序邏輯
-                final filtered = _applyFilters(products);
+                final products = productsRaw.cast<dynamic>();
 
-                if (filtered.isEmpty) {
-                  return Center(
-                    child: Text('找不到「$query」的結果',
-                        style: TextStyle(
-                            fontSize: 16, color: tokens.textSecondary)),
-                  );
-                }
-                return ListView.separated(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: filtered.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemBuilder: (_, index) {
-                    final product = filtered[index];
-                    return AppCard(
-                      onTap: () {
-                        unawaited(UserLearningStore().markGlobalLearnedToday());
-                        Navigator.of(context).push(MaterialPageRoute(
-                          builder: (_) => ProductPage(productId: product.id),
-                        ));
-                      },
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                final lib = libAsync.value ?? const <dynamic>[];
+                final purchasedSet = _purchasedSetFromLib(lib);
+                final pushingSet = _pushingSetFromLib(lib);
+
+                final filtered = _applyFiltersAndSort(
+                  products: products,
+                  filter: filter,
+                  sort: sort,
+                  purchasedSet: purchasedSet,
+                  pushingSet: pushingSet,
+                );
+
+                // ✅ 篩選/排序控制列
+                Widget filterBar() {
+                  final hasActive =
+                      !filter.isEmpty || sort != SearchSort.relevant;
+
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    child: AppCard(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                      child: Row(
                         children: [
-                          Text(
-                            product.title,
-                            style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w800,
-                                color: tokens.textPrimary),
+                          OutlinedButton.icon(
+                            onPressed: () => _openFilterSheet(
+                                context: context, products: products),
+                            icon: const Icon(Icons.tune),
+                            label: Text(hasActive ? '篩選（已套用）' : '篩選'),
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            '${product.topicId} · ${product.level}',
-                            style: TextStyle(color: tokens.textSecondary),
-                          ),
-                          if (product.levelGoal != null) ...[
-                            const SizedBox(height: 8),
-                            Text(
-                              product.levelGoal!,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: tokens.textSecondary),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.centerRight,
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<SearchSort>(
+                                  value: sort,
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: SearchSort.relevant,
+                                      child: Text('排序：相關'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: SearchSort.title,
+                                      child: Text('排序：標題'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: SearchSort.level,
+                                      child: Text('排序：等級'),
+                                    ),
+                                  ],
+                                  onChanged: (v) {
+                                    if (v == null) return;
+                                    ref
+                                        .read(_searchSortProvider.notifier)
+                                        .state = v;
+                                  },
+                                ),
+                              ),
                             ),
-                          ],
+                          ),
                         ],
                       ),
-                    );
-                  },
+                    ),
+                  );
+                }
+
+                if (products.isEmpty) {
+                  return Column(
+                    children: [
+                      filterBar(),
+                      Expanded(
+                        child: Center(
+                          child: Text('找不到「$query」的結果',
+                              style: TextStyle(
+                                  fontSize: 16, color: tokens.textSecondary)),
+                        ),
+                      ),
+                    ],
+                  );
+                }
+
+                if (filtered.isEmpty) {
+                  return Column(
+                    children: [
+                      filterBar(),
+                      Expanded(
+                        child: Center(
+                          child: Text('已套用篩選，但沒有符合的結果',
+                              style: TextStyle(
+                                  fontSize: 16, color: tokens.textSecondary)),
+                        ),
+                      ),
+                    ],
+                  );
+                }
+
+                return Column(
+                  children: [
+                    filterBar(),
+                    Expanded(
+                      child: ListView.separated(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        itemCount: filtered.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        itemBuilder: (_, index) {
+                          final product = filtered[index] as dynamic;
+                          final pid = product.id as String;
+                          final isPurchased = purchasedSet.contains(pid);
+                          final isPushing = pushingSet.contains(pid);
+
+                          return AppCard(
+                            onTap: () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                    builder: (_) =>
+                                        ProductPage(productId: pid))),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        (product.title ?? '').toString(),
+                                        style: TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w800,
+                                          color: tokens.textPrimary,
+                                        ),
+                                      ),
+                                    ),
+                                    if (isPurchased)
+                                      _pill(
+                                          '已購買',
+                                          tokens.primary
+                                              .withValues(alpha: 0.16),
+                                          tokens.primary),
+                                    if (isPushing) ...[
+                                      const SizedBox(width: 6),
+                                      _pill(
+                                          '推播中',
+                                          tokens.primary
+                                              .withValues(alpha: 0.12),
+                                          tokens.primary),
+                                    ],
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  '${product.topicId} · ${product.level}',
+                                  style: TextStyle(color: tokens.textSecondary),
+                                ),
+                                finalLG(product, tokens),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 );
               },
               loading: () => const Center(child: CircularProgressIndicator()),
@@ -236,244 +777,171 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     );
   }
 
-  List<dynamic> _applyFilters(List<dynamic> products) {
-    // 讀使用者狀態（已購買/推播/願望清單）——未登入就視為空集合
-    final purchasedIds = <String>{};
-    final pushingIds = <String>{};
-    final wishlistIds = <String>{};
-
-    try {
-      ref.read(uidProvider);
-      final libData = ref.read(libraryProductsProvider).asData?.value;
-      if (libData != null) {
-        for (final lp in libData) {
-          final pid = (lp as dynamic).productId?.toString();
-          if (pid != null) purchasedIds.add(pid);
-          try {
-            if ((lp as dynamic).pushEnabled == true) pushingIds.add(pid!);
-          } catch (_) {}
-        }
-      }
-      final wishData = ref.read(wishlistProvider).asData?.value;
-      if (wishData != null) {
-        for (final w in wishData) {
-          final pid = (w as dynamic).productId?.toString();
-          if (pid != null) wishlistIds.add(pid);
-        }
-      }
-    } catch (_) {
-      // not logged in
-    }
-
-    List<dynamic> filtered = List.from(products);
-
-    // 篩選：已購買
-    if (_filters.purchasedOnly) {
-      filtered = filtered
-          .where(
-              (p) => purchasedIds.contains((p as dynamic).id?.toString() ?? ''))
-          .toList();
-    }
-    // 篩選：未購買收藏
-    if (_filters.wishlistOnly) {
-      filtered = filtered
-          .where(
-              (p) => wishlistIds.contains((p as dynamic).id?.toString() ?? ''))
-          .toList();
-    }
-    // 篩選：推播中
-    if (_filters.pushingOnly) {
-      filtered = filtered
-          .where(
-              (p) => pushingIds.contains((p as dynamic).id?.toString() ?? ''))
-          .toList();
-    }
-
-    // 篩選：可試讀（trialLimit > 0）
-    if (_filters.trialOnly) {
-      filtered = filtered.where((p) {
-        try {
-          final dyn = p as dynamic;
-          final tl = dyn.trialLimit;
-          if (tl is num && tl > 0) return true;
-        } catch (_) {}
-        return false;
-      }).toList();
-    }
-
-    // 篩選：Level
-    if (_filters.levels.isNotEmpty) {
-      filtered = filtered.where((p) {
-        try {
-          final lv = (p as dynamic).level?.toString();
-          return lv != null && _filters.levels.contains(lv);
-        } catch (_) {
-          return false;
-        }
-      }).toList();
-    }
-
-    // 排序
-    if (_filters.sort == SearchSort.newest) {
-      filtered.sort((a, b) {
-        final oa = _orderOf(a);
-        final ob = _orderOf(b);
-        return ob.compareTo(oa);
-      });
-    } else if (_filters.sort == SearchSort.titleAZ) {
-      filtered.sort((a, b) {
-        final ta = _titleOf(a);
-        final tb = _titleOf(b);
-        return ta.compareTo(tb);
-      });
-    }
-
-    return filtered;
-  }
-
-  int _orderOf(dynamic p) {
-    try {
-      final v = p.order;
-      if (v is int) return v;
-      if (v is num) return v.toInt();
-    } catch (_) {}
-    return -999999;
-  }
-
-  String _titleOf(dynamic p) {
-    try {
-      return (p.title ?? '').toString();
-    } catch (_) {
-      return '';
-    }
-  }
-
-  Future<SearchFilters?> _openFiltersSheet(BuildContext context) {
-    final tokens = context.tokens;
-
-    return showModalBottomSheet<SearchFilters>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) {
-        SearchFilters temp = _filters;
-        return StatefulBuilder(
-          builder: (context, setModal) {
-            Widget chip(String text, bool selected, VoidCallback onTap) {
-              return FilterChip(
-                label: Text(text),
-                selected: selected,
-                onSelected: (_) => onTap(),
-              );
-            }
-
-            return Container(
-              margin: const EdgeInsets.all(12),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.75),
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
-              ),
-              child: SafeArea(
-                top: false,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('篩選與排序',
-                        style: TextStyle(
-                            color: tokens.textPrimary,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 16)),
-                    const SizedBox(height: 12),
-                    Text('狀態', style: TextStyle(color: tokens.textSecondary)),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 10,
-                      children: [
-                        chip('已購買', temp.purchasedOnly, () {
-                          setModal(() => temp = temp.copyWith(
-                              purchasedOnly: !temp.purchasedOnly));
-                        }),
-                        chip('未購買收藏', temp.wishlistOnly, () {
-                          setModal(() => temp =
-                              temp.copyWith(wishlistOnly: !temp.wishlistOnly));
-                        }),
-                        chip('推播中', temp.pushingOnly, () {
-                          setModal(() => temp =
-                              temp.copyWith(pushingOnly: !temp.pushingOnly));
-                        }),
-                        chip('可試讀', temp.trialOnly, () {
-                          setModal(() =>
-                              temp = temp.copyWith(trialOnly: !temp.trialOnly));
-                        }),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    Text('等級', style: TextStyle(color: tokens.textSecondary)),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 10,
-                      children: [
-                        for (final lv in const ['L1', 'L2', 'L3', 'L4', 'L5'])
-                          chip(lv, temp.levels.contains(lv), () {
-                            final next = {...temp.levels};
-                            if (next.contains(lv)) {
-                              next.remove(lv);
-                            } else {
-                              next.add(lv);
-                            }
-                            setModal(() => temp = temp.copyWith(levels: next));
-                          }),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    Text('排序', style: TextStyle(color: tokens.textSecondary)),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 10,
-                      children: [
-                        chip('最相關', temp.sort == SearchSort.relevance, () {
-                          setModal(() =>
-                              temp = temp.copyWith(sort: SearchSort.relevance));
-                        }),
-                        chip('最新', temp.sort == SearchSort.newest, () {
-                          setModal(() =>
-                              temp = temp.copyWith(sort: SearchSort.newest));
-                        }),
-                        chip('名稱 A→Z', temp.sort == SearchSort.titleAZ, () {
-                          setModal(() =>
-                              temp = temp.copyWith(sort: SearchSort.titleAZ));
-                        }),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () =>
-                                setModal(() => temp = const SearchFilters()),
-                            child: const Text('清除'),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: () => Navigator.of(context).pop(temp),
-                            child: const Text('套用'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
+  Widget finalLG(dynamic product, AppTokens tokens) {
+    final lg = (product.levelGoal as String?)?.trim();
+    if (lg == null || lg.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Text(
+        lg,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(color: tokens.textSecondary),
+      ),
     );
   }
+
+  Widget _pill(String text, Color bg, Color fg) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: fg.withValues(alpha: 0.25)),
+      ),
+      child: Text(text,
+          style:
+              TextStyle(color: fg, fontSize: 12, fontWeight: FontWeight.w800)),
+    );
+  }
+}
+
+class SearchForYouSection extends StatelessWidget {
+  final List<String> keywords;
+  final VoidCallback onRefresh;
+  final void Function(String q) onTap;
+
+  const SearchForYouSection({
+    super.key,
+    required this.keywords,
+    required this.onRefresh,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    if (keywords.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      child: AppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text('你可能想找',
+                    style: TextStyle(
+                      color: tokens.textPrimary,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                    )),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: onRefresh,
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: const Text('更新'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: keywords
+                  .map((k) => ActionChip(
+                        label: Text(k),
+                        onPressed: () => onTap(k),
+                        backgroundColor: tokens.chipBg,
+                        labelStyle: TextStyle(
+                          color: tokens.textPrimary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        side: BorderSide(color: tokens.cardBorder),
+                      ))
+                  .toList(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class SearchTrendingSection extends StatelessWidget {
+  final List<String> keywords;
+  final VoidCallback onRefresh;
+  final void Function(String q) onTap;
+
+  const SearchTrendingSection({
+    super.key,
+    required this.keywords,
+    required this.onRefresh,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      child: AppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text('本週趨勢',
+                    style: TextStyle(
+                      color: tokens.textPrimary,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                    )),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: onRefresh,
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: const Text('換一批'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: keywords
+                  .map((k) => ActionChip(
+                        label: Text(k),
+                        onPressed: () => onTap(k),
+                        backgroundColor: tokens.chipBg,
+                        labelStyle: TextStyle(
+                          color: tokens.textPrimary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        side: BorderSide(color: tokens.cardBorder),
+                      ))
+                  .toList(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PseudoRandom implements Random {
+  int _seed;
+  _PseudoRandom(this._seed);
+
+  @override
+  int nextInt(int max) {
+    _seed = (_seed * 1103515245 + 12345) & 0x7fffffff;
+    return _seed % max;
+  }
+
+  @override
+  double nextDouble() => nextInt(1 << 20) / (1 << 20);
+
+  @override
+  bool nextBool() => nextInt(2) == 0;
 }
