@@ -32,7 +32,7 @@ final upcomingTimelineProvider = FutureProvider<List<PushTask>>((ref) async {
   }
 
   // ✅ 跳過下一則清單（本機）
-  final skipSet = await SkipNextStore.load(uid);
+  final globalSkip = await SkipNextStore.load(uid);
 
   // 建 library map（只保留存在的 product）
   final libMap = <String, UserLibraryProduct>{};
@@ -60,9 +60,16 @@ final upcomingTimelineProvider = FutureProvider<List<PushTask>>((ref) async {
     iosSafeMaxScheduled: 60,
   );
 
-  // ✅ UI 顯示也要排除 skip（但不 remove，真正 reschedule 才 remove）
-  final filtered = tasks.where((t) => !skipSet.contains(t.item.id)).toList()
-    ..sort((a, b) => a.when.compareTo(b.when));
+  // ✅ UI 顯示也要排除 skip（全域 + 商品範圍）
+  final filtered = <PushTask>[];
+  for (final t in tasks) {
+    if (globalSkip.contains(t.item.id)) continue;
 
+    final scoped = await SkipNextStore.loadForProduct(uid, t.productId);
+    if (scoped.contains(t.item.id)) continue;
+
+    filtered.add(t);
+  }
+  filtered.sort((a, b) => a.when.compareTo(b.when));
   return filtered;
 });

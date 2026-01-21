@@ -30,4 +30,25 @@ class SkipNextStore {
     final sp = await SharedPreferences.getInstance();
     await sp.remove(_key(uid));
   }
+
+  // 新增：商品範圍的 skip key
+  static String _kProductScoped(String productId) => 'product::$productId';
+
+  static Future<void> addProductScoped(
+      String uid, String productId, String contentItemId) async {
+    final sp = await SharedPreferences.getInstance();
+    final key = '${_kPrefix}${_kProductScoped(productId)}_$uid';
+    final list = (sp.getStringList(key) ?? const <String>[]).toSet();
+    list.add(contentItemId);
+    await sp.setStringList(key, list.toList());
+  }
+
+  /// 讀取某商品的 skip set（不影響全域）
+  static Future<Set<String>> loadForProduct(
+      String uid, String productId) async {
+    final sp = await SharedPreferences.getInstance();
+    final key = '${_kPrefix}${_kProductScoped(productId)}_$uid';
+    final list = sp.getStringList(key) ?? const <String>[];
+    return list.toSet();
+  }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/global_push_settings.dart';
+import '../models/user_library.dart';
 import '../notifications/push_orchestrator.dart';
 import '../providers/providers.dart';
 import '../../notifications/dnd_settings.dart';
@@ -12,6 +13,11 @@ import 'widgets/bubble_card.dart';
 import 'widgets/push_inbox_section.dart';
 import '../../../pages/push_inbox_page.dart';
 import '../../../pages/push_timeline_page.dart';
+import 'product_library_page.dart';
+import '../../notifications/widgets/timeline_widgets.dart';
+import '../../notifications/timeline_meta_mode.dart';
+import '../../notifications/widgets/push_hint.dart';
+import '../../notifications/push_timeline_list.dart';
 
 final dndFuture = FutureProvider.autoDispose<DndSettings>((ref) async {
   final uid = ref.read(uidProvider);
@@ -27,6 +33,7 @@ class PushCenterPage extends ConsumerWidget {
     final libAsync = ref.watch(libraryProductsProvider);
     final productsAsync = ref.watch(productsMapProvider);
     final timelineAsync = ref.watch(upcomingTimelineProvider);
+    final savedAsync = ref.watch(savedItemsProvider);
     final dndAsync = ref.watch(dndFuture);
 
     return Scaffold(
@@ -212,6 +219,18 @@ class PushCenterPage extends ConsumerWidget {
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (e, _) => Text('timeline error: $e'),
           ),
+          const SizedBox(height: 12),
+
+          // ✅ 未來 3 天時間表（嵌入式預覽）
+          _timelinePreview(
+            context: context,
+            ref: ref,
+            timelineAsync: timelineAsync,
+            productsAsync: productsAsync,
+            savedAsync: savedAsync,
+            libAsync: libAsync,
+          ),
+
           const SizedBox(height: 12),
           const Text('推播中',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
@@ -426,6 +445,223 @@ class PushCenterPage extends ConsumerWidget {
           Text('更改設定後會自動重排未來 3 天推播',
               style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.7), fontSize: 12)),
+        ],
+      ),
+    );
+  }
+
+  Widget _timelinePreview({
+    required BuildContext context,
+    required WidgetRef ref,
+    required AsyncValue timelineAsync,
+    required AsyncValue productsAsync,
+    required AsyncValue savedAsync,
+    required AsyncValue libAsync,
+  }) {
+    final metaMode = ref.watch(timelineMetaModeProvider);
+
+    return BubbleCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('未來 3 天時間表',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+              const Spacer(),
+              SegmentedButton<TimelineMetaMode>(
+                segments: const [
+                  ButtonSegment(value: TimelineMetaMode.day, label: Text('Day')),
+                  ButtonSegment(value: TimelineMetaMode.push, label: Text('推播')),
+                  ButtonSegment(value: TimelineMetaMode.nth, label: Text('第N')),
+                ],
+                selected: {metaMode},
+                onSelectionChanged: (s) =>
+                    ref.read(timelineMetaModeProvider.notifier).state = s.first,
+                showSelectedIcon: false,
+              ),
+              const SizedBox(width: 8),
+              TextButton(
+                onPressed: () {
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (ctx) {
+                      return DraggableScrollableSheet(
+                        initialChildSize: 0.92,
+                        minChildSize: 0.6,
+                        maxChildSize: 0.98,
+                        expand: false,
+                        builder: (_, controller) {
+                          return ClipRRect(
+                            borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+                            child: Material(
+                              color: Colors.black.withValues(alpha: 0.25),
+                              child: PushTimelineList(
+                                showTopBar: false,
+                                onClose: () => Navigator.of(ctx).pop(),
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  );
+                },
+                child: const Text('查看全部'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          productsAsync.when(
+            data: (productsMap) {
+              return libAsync.when(
+                data: (lib) {
+                  final libMap = <String, UserLibraryProduct>{};
+                  for (final lp in lib) {
+                    libMap[lp.productId] = lp;
+                  }
+
+                  return savedAsync.when(
+                    data: (savedMap) {
+                      return timelineAsync.when(
+                    data: (items) {
+                      if (items.isEmpty) {
+                        return Text('目前沒有已排程的推播',
+                            style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.75)));
+                      }
+
+                      // ✅ 預覽前 6 筆
+                      final preview = items.take(6).toList();
+
+                      // ✅ 分日 + 同日同商品第 N 則
+                      final groups = <String, List<dynamic>>{};
+                      for (final it in preview) {
+                        final when = (it as dynamic).when as DateTime;
+                        final dk = tlDayKey(when);
+                        (groups[dk] ??= []).add(it);
+                      }
+
+                      final dayKeys = groups.keys.toList()..sort();
+
+                      final rows = <TLRow>[];
+                      for (final dk in dayKeys) {
+                        rows.add(TLRow.header(dk));
+
+                        final list = groups[dk]!
+                          ..sort((a, b) {
+                            final wa = (a as dynamic).when as DateTime;
+                            final wb = (b as dynamic).when as DateTime;
+                            return wa.compareTo(wb);
+                          });
+
+                        final cntByProduct = <String, int>{};
+                        for (final t in list) {
+                          final pid = (t as dynamic).productId as String;
+                          final n = (cntByProduct[pid] ?? 0) + 1;
+                          cntByProduct[pid] = n;
+                          rows.add(TLRow.item(t, seqInDayForProduct: n));
+                        }
+                      }
+
+                      return Column(
+                        children: [
+                          ...List.generate(rows.length, (index) {
+                            final r = rows[index];
+
+                            if (r.isHeader) {
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 6, bottom: 8),
+                                child: Text(
+                                  r.dayKey!,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.75),
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              );
+                            }
+
+                            final it = r.item!;
+                            final when = (it as dynamic).when as DateTime;
+                            final productId = (it as dynamic).productId as String;
+                            final item = (it as dynamic).item;
+                            final contentItemId = (item as dynamic).id as String;
+                            final previewText = (item as dynamic).content as String?;
+
+                            final productTitle =
+                                productsMap[productId]?.title ?? productId;
+
+                            final day = (item as dynamic).pushOrder as int?;
+                            final saved = savedMap[contentItemId];
+
+                            // ✅ 當日第一/最後：用 rows 判斷（header 分隔）
+                            final isFirstItemOfDay =
+                                index > 0 && rows[index - 1].isHeader;
+                            final isLastItemOfDay =
+                                (index + 1 >= rows.length) || rows[index + 1].isHeader;
+
+                            final metaMode = ref.watch(timelineMetaModeProvider);
+                            final lp = libMap[productId];
+
+                            String metaText() {
+                              switch (metaMode) {
+                                case TimelineMetaMode.day:
+                                  return day != null ? 'Day $day' : '';
+                                case TimelineMetaMode.push:
+                                  return lp != null ? pushHintFor(lp) : '';
+                                case TimelineMetaMode.nth:
+                                  return r.seqInDayForProduct != null
+                                      ? '第 ${r.seqInDayForProduct} 則'
+                                      : '';
+                              }
+                            }
+
+                            return tlTimelineRow(
+                              context: context,
+                              when: when,
+                              title: productTitle,
+                              preview: previewText ?? '',
+                              metaText: metaText(),
+                              saved: saved,
+                              seqInDay: r.seqInDayForProduct,
+                              isFirst: isFirstItemOfDay,
+                              isLast: isLastItemOfDay,
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => ProductLibraryPage(
+                                      productId: productId,
+                                      isWishlistPreview: false,
+                                      initialContentItemId: contentItemId,
+                                    ),
+                                  ),
+                                );
+                              },
+                            );
+                          }),
+                        ],
+                      );
+                      },
+                      loading: () =>
+                          const Center(child: CircularProgressIndicator()),
+                      error: (e, _) => Text('timeline error: $e'),
+                    );
+                  },
+                  loading: () => const Center(child: CircularProgressIndicator()),
+                  error: (e, _) => Text('saved error: $e'),
+                );
+              },
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Text('library error: $e'),
+            );
+          },
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Text('products error: $e'),
+        ),
         ],
       ),
     );
