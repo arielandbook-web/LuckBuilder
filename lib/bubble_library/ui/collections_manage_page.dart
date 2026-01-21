@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../theme/app_tokens.dart';
 import '../collections/collections_controller.dart';
 import '../collections/daily_routine_provider.dart';
 import '../collections/collections_store.dart';
@@ -583,13 +584,14 @@ class _LibraryOverviewCard extends ConsumerWidget {
 
     final hasDaily =
         activeCollectionId != null && activeCollectionId.isNotEmpty;
+    final t = context.tokens;
 
     return Card(
       elevation: 0,
-      color: Colors.white.withValues(alpha: 0.08),
+      color: t.cardBg,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
+        side: BorderSide(color: t.cardBorder),
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -598,11 +600,14 @@ class _LibraryOverviewCard extends ConsumerWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.auto_awesome, size: 18),
+                Icon(Icons.auto_awesome, size: 18, color: t.textPrimary),
                 const SizedBox(width: 8),
-                const Text(
+                Text(
                   '泡泡庫總覽',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      color: t.textPrimary),
                 ),
                 const Spacer(),
                 if (hasDaily)
@@ -610,14 +615,15 @@ class _LibraryOverviewCard extends ConsumerWidget {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.10),
+                      color: t.chipBg,
                       borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.12)),
+                      border: Border.all(color: t.cardBorder),
                     ),
-                    child: const Text('日常中',
+                    child: Text('日常中',
                         style: TextStyle(
-                            fontSize: 12, fontWeight: FontWeight.w800)),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            color: t.textPrimary)),
                   ),
               ],
             ),
@@ -625,15 +631,14 @@ class _LibraryOverviewCard extends ConsumerWidget {
             Row(
               children: [
                 Icon(Icons.play_circle_outline,
-                    size: 18, color: Colors.white.withValues(alpha: 0.85)),
+                    size: 18, color: t.textSecondary),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     hasDaily
                         ? '目前日常：${activeCollectionName ?? '（讀取中）'}'
                         : '目前未啟用日常（建議選一個收藏集變成日常）',
-                    style:
-                        TextStyle(color: Colors.white.withValues(alpha: 0.88)),
+                    style: TextStyle(color: t.textSecondary),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -645,12 +650,14 @@ class _LibraryOverviewCard extends ConsumerWidget {
               spacing: 8,
               runSpacing: 8,
               children: [
+                _miniChip(context, '收藏集',
+                    collectionCount == null ? '—' : '$collectionCount'),
+                _miniChip(context, '日常商品', '${dailyProductIds.length}'),
+                _miniChip(context, '推播中',
+                    pushingCount == null ? '—' : '$pushingCount'),
                 _miniChip(
-                    '收藏集', collectionCount == null ? '—' : '$collectionCount'),
-                _miniChip('日常商品', '${dailyProductIds.length}'),
-                _miniChip('推播中', pushingCount == null ? '—' : '$pushingCount'),
-                _miniChip('今日已排', todayCount == null ? '—' : '$todayCount'),
-                _miniChip('下一則', nextTimeText ?? '—'),
+                    context, '今日已排', todayCount == null ? '—' : '$todayCount'),
+                _miniChip(context, '下一則', nextTimeText ?? '—'),
               ],
             ),
             const SizedBox(height: 12),
@@ -679,18 +686,19 @@ class _LibraryOverviewCard extends ConsumerWidget {
     );
   }
 
-  static Widget _miniChip(String k, String v) {
+  static Widget _miniChip(BuildContext context, String k, String v) {
+    final t = context.tokens;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.08),
+        color: t.chipBg,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+        border: Border.all(color: t.cardBorder),
       ),
       child: Text(
         '$k $v',
         style: TextStyle(
-          color: Colors.white.withValues(alpha: 0.90),
+          color: t.textPrimary,
           fontSize: 12,
           fontWeight: FontWeight.w800,
         ),
@@ -741,15 +749,16 @@ class _CollectionDenseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = context.tokens;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Card(
         elevation: 0,
-        color: Colors.white.withValues(alpha: 0.08),
+        color: t.cardBg,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
-          side: BorderSide(color: Colors.white.withValues(alpha: 0.10)),
+          side: BorderSide(color: t.cardBorder),
         ),
         child: Padding(
           padding: const EdgeInsets.all(14),
@@ -763,13 +772,15 @@ class _CollectionDenseCard extends StatelessWidget {
                       name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w900),
+                      style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: t.textPrimary),
                     ),
                   ),
                   if (isDaily) ...[
                     const SizedBox(width: 8),
-                    _badge('日常中'),
+                    _badge(context, '日常中'),
                   ],
                   if (trailing != null) ...[
                     const SizedBox(width: 8),
@@ -782,9 +793,9 @@ class _CollectionDenseCard extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  _chip('總數', '$total'),
-                  _chip('已購買', '$purchased'),
-                  _chip('推播中', '$pushing'),
+                  _chip(context, '總數', '$total'),
+                  _chip(context, '已購買', '$purchased'),
+                  _chip(context, '推播中', '$pushing'),
                 ],
               ),
               if (previewTitles.isNotEmpty) ...[
@@ -792,23 +803,19 @@ class _CollectionDenseCard extends StatelessWidget {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: previewTitles
-                      .map((t) => Padding(
+                      .map((title) => Padding(
                             padding: const EdgeInsets.only(bottom: 6),
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text('• ',
-                                    style: TextStyle(
-                                        color: Colors.white
-                                            .withValues(alpha: 0.85))),
+                                    style: TextStyle(color: t.textSecondary)),
                                 Expanded(
                                   child: Text(
-                                    t,
+                                    title,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                        color: Colors.white
-                                            .withValues(alpha: 0.85)),
+                                    style: TextStyle(color: t.textSecondary),
                                   ),
                                 ),
                               ],
@@ -818,9 +825,7 @@ class _CollectionDenseCard extends StatelessWidget {
                 ),
               ] else ...[
                 const SizedBox(height: 12),
-                Text('（此收藏集尚未加入商品）',
-                    style:
-                        TextStyle(color: Colors.white.withValues(alpha: 0.65))),
+                Text('（此收藏集尚未加入商品）', style: TextStyle(color: t.textSecondary)),
               ],
             ],
           ),
@@ -829,33 +834,40 @@ class _CollectionDenseCard extends StatelessWidget {
     );
   }
 
-  static Widget _badge(String text) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-        ),
-        child: Text(text,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900)),
-      );
-
-  static Widget _chip(String k, String v) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
-        ),
-        child: Text(
-          '$k $v',
+  static Widget _badge(BuildContext context, String text) {
+    final t = context.tokens;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: t.chipBg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: t.cardBorder),
+      ),
+      child: Text(text,
           style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.90),
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
-          ),
+              fontSize: 12, fontWeight: FontWeight.w900, color: t.textPrimary)),
+    );
+  }
+
+  static Widget _chip(BuildContext context, String k, String v) {
+    final t = context.tokens;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: t.chipBg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: t.cardBorder),
+      ),
+      child: Text(
+        '$k $v',
+        style: TextStyle(
+          color: t.textPrimary,
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
         ),
-      );
+      ),
+    );
+  }
 }
 
 bool _isSameDay(DateTime a, DateTime b) =>

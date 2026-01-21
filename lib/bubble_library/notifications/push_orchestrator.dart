@@ -9,6 +9,7 @@ import 'push_scheduler.dart';
 import '../../notifications/daily_routine_store.dart';
 import '../../notifications/dnd_settings.dart';
 import '../../notifications/push_skip_store.dart';
+import '../../notifications/skip_next_store.dart';
 
 class PushOrchestrator {
   static Map<String, dynamic>? decodePayload(String? payload) {
@@ -100,13 +101,33 @@ class PushOrchestrator {
       iosSafeMaxScheduled: 60,
     );
 
+    // ✅ 本機「跳過下一則」：重排時略過指定 contentItemId（一次性）
+    final skipMap = await SkipNextStore.load(uid);
+
+    // 記錄哪些 product 的 skip 被用到（用完就清掉）
+    final usedSkipProducts = <String>{};
+
+    // 先過濾 tasks（略過要跳過的那一則）
+    final filtered = <dynamic>[];
+    for (final t in tasks) {
+      final skipId = skipMap[t.productId];
+      if (skipId != null && skipId == t.item.id) {
+        usedSkipProducts.add(t.productId);
+        continue;
+      }
+      filtered.add(t);
+    }
+
+    // 用 filtered 取代 tasks
+    final finalTasks = filtered.cast();
+
     final ns = NotificationService();
     await ns.cancelAll();
 
     int idSeed = DateTime.now().millisecondsSinceEpoch.remainder(1000000);
     DateTime? prevWhen;
 
-    for (final t in tasks) {
+    for (final t in finalTasks) {
       final scheduledAt = adjustWhen(
         original: t.when,
         s: dnd,
@@ -135,6 +156,11 @@ class PushOrchestrator {
         body: body,
         payload: payload,
       );
+    }
+
+    // ✅ 清掉已使用的 skip（一次性）
+    if (usedSkipProducts.isNotEmpty) {
+      await SkipNextStore.clearProducts(uid: uid, productIds: usedSkipProducts);
     }
   }
 }

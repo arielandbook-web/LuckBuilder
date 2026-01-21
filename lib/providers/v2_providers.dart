@@ -40,6 +40,15 @@ final bannerProductsProvider = FutureProvider<List<Product>>((ref) async {
   return repo.fetchProductsByIdsOrdered(list.productIds.take(3).toList());
 });
 
+/// coming soon 的 productId set（由 featured_lists/coming_soon 產生）
+final comingSoonIdsProvider = Provider<Set<String>>((ref) {
+  final async = ref.watch(featuredProductsProvider('coming_soon'));
+  return async.maybeWhen(
+    data: (ps) => ps.map((e) => e.id).toSet(),
+    orElse: () => <String>{},
+  );
+});
+
 final productsByTopicProvider =
     FutureProvider.family<List<Product>, String>((ref, topicId) async {
   return ref.watch(v2RepoProvider).fetchProductsByTopic(topicId);
@@ -77,6 +86,22 @@ final allProductsMapProvider =
     map[d.id] = Product.fromDoc(d.id, d.data());
   }
   return map;
+});
+
+final autoNewArrivalsProvider = Provider<List<Product>>((ref) {
+  final allAsync = ref.watch(allProductsMapProvider);
+  return allAsync.maybeWhen(
+    data: (map) {
+      final now = DateTime.now();
+      final from = now.subtract(const Duration(days: 7));
+      final list = map.values
+          .where((p) => p.createdAt != null && p.createdAt!.isAfter(from))
+          .toList();
+      list.sort((a, b) => (b.createdAtMs ?? 0).compareTo(a.createdAtMs ?? 0));
+      return list;
+    },
+    orElse: () => <Product>[],
+  );
 });
 
 // 本週新泡泡（已上架：order 倒序）

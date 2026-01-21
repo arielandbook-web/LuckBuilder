@@ -94,6 +94,8 @@ class Product {
   final String? spec4Label;
 
   final int trialLimit;
+  final int? releaseAtMs;
+  final int? createdAtMs;
 
   Product({
     required this.id,
@@ -109,6 +111,8 @@ class Product {
     this.spec3Label,
     this.spec4Label,
     required this.trialLimit,
+    this.releaseAtMs,
+    this.createdAtMs,
   });
 
   factory Product.fromDoc(String id, Map<String, dynamic> m) => Product(
@@ -125,7 +129,23 @@ class Product {
         spec3Label: m['spec3Label'],
         spec4Label: m['spec4Label'],
         trialLimit: (m['trialLimit'] ?? 3) as int,
+        releaseAtMs: (m['releaseAtMs'] is num)
+            ? (m['releaseAtMs'] as num).toInt()
+            : null,
+        createdAtMs: (m['createdAtMs'] is num)
+            ? (m['createdAtMs'] as num).toInt()
+            : null,
       );
+
+  DateTime? get releaseAt =>
+      releaseAtMs == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(releaseAtMs!);
+
+  DateTime? get createdAt =>
+      createdAtMs == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(createdAtMs!);
 }
 
 class ContentItem {

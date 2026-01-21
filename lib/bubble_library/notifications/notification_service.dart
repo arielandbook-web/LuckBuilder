@@ -66,6 +66,10 @@ class NotificationService {
     await _cache.clear();
   }
 
+  Future<void> cancel(int id) async {
+    await plugin.cancel(id);
+  }
+
   Future<void> schedule({
     required int id,
     required DateTime when,

@@ -5,8 +5,8 @@ import '../models/global_push_settings.dart';
 import '../notifications/push_orchestrator.dart';
 import '../providers/providers.dart';
 import '../../notifications/dnd_settings.dart';
-import '../../notifications/push_skip_store.dart';
 import '../../notifications/push_timeline_provider.dart';
+import '../../notifications/skip_next_store.dart';
 import 'push_product_config_page.dart';
 import 'widgets/bubble_card.dart';
 import 'widgets/push_inbox_section.dart';
@@ -81,156 +81,120 @@ class PushCenterPage extends ConsumerWidget {
           ),
           const SizedBox(height: 10),
           timelineAsync.when(
-            data: (tasks) {
-              if (tasks.isEmpty) {
+            data: (list) {
+              if (list.isEmpty) {
                 return BubbleCard(
-                  child: Text('目前沒有可排程的推播（可能尚未啟用推播或內容不足）',
+                  child: Text('尚未產生 timeline（可按右上角刷新重排 3 天）',
                       style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.8))),
                 );
               }
 
-              // 依日期分組
-              final byDay = <String, List<dynamic>>{};
-              for (final t in tasks) {
-                final when = (t as dynamic).when as DateTime;
-                final key =
-                    '${when.year}-${when.month.toString().padLeft(2, '0')}-${when.day.toString().padLeft(2, '0')}';
-                byDay.putIfAbsent(key, () => []).add(t);
+              // 排序（以 when）
+              final items = List.of(list);
+              items.sort((a, b) {
+                try {
+                  final wa = (a as dynamic).when as DateTime;
+                  final wb = (b as dynamic).when as DateTime;
+                  return wa.compareTo(wb);
+                } catch (_) {
+                  return 0;
+                }
+              });
+
+              // 找每個 product 的第一則（才顯示「跳過下一則」）
+              final firstIdxByProduct = <String, int>{};
+              for (int i = 0; i < items.length; i++) {
+                final t = items[i];
+                final pid = (t as dynamic).productId?.toString() ?? '';
+                if (pid.isEmpty) continue;
+                firstIdxByProduct.putIfAbsent(pid, () => i);
               }
 
-              final dayKeys = byDay.keys.toList()..sort();
+              return productsAsync.when(
+                data: (productsMap) {
+                  return ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: items.length.clamp(0, 40),
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (_, i) {
+                      final t = items[i];
+                      final pid = (t as dynamic).productId?.toString() ?? '';
+                      final when = (t as dynamic).when as DateTime?;
+                      final cid = (t as dynamic).contentItemId?.toString() ??
+                          (t as dynamic).itemId?.toString() ??
+                          (t as dynamic).contentId?.toString() ??
+                          ((t as dynamic).item != null
+                              ? ((t as dynamic).item as dynamic).id?.toString()
+                              : '') ??
+                          '';
 
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: dayKeys.map((day) {
-                  final list = byDay[day]!
-                    ..sort((a, b) {
-                      final ta = (a as dynamic).when as DateTime;
-                      final tb = (b as dynamic).when as DateTime;
-                      return ta.compareTo(tb);
-                    });
+                      final title = productsMap[pid]?.title ?? pid;
+                      final isFirst = firstIdxByProduct[pid] == i;
 
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: BubbleCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Builder(builder: (_) {
-                            // list 已 sort 過：第一筆=最早，最後一筆=最晚
-                            final firstWhen =
-                                (list.first as dynamic).when as DateTime;
-                            final lastWhen =
-                                (list.last as dynamic).when as DateTime;
-
-                            String hhmm(DateTime d) =>
-                                '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
-
-                            return Row(
-                              children: [
-                                Text(day,
-                                    style: const TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w900)),
-                                const Spacer(),
-                                Text(
-                                  '${hhmm(firstWhen)}–${hhmm(lastWhen)}',
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.7),
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ],
-                            );
-                          }),
-                          const SizedBox(height: 10),
-                          ...list.map((t) {
-                            final when = (t as dynamic).when as DateTime;
-                            final productId =
-                                (t as dynamic).productId.toString();
-                            final item = (t as dynamic).item;
-                            final cid = (item as dynamic).id.toString();
-
-                            final title = productsAsync.maybeWhen(
-                              data: (pm) => pm[productId]?.title ?? productId,
-                              orElse: () => productId,
-                            );
-
-                            final hh = when.hour.toString().padLeft(2, '0');
-                            final mm = when.minute.toString().padLeft(2, '0');
-
-                            final sub =
-                                '${(item as dynamic).intent}｜◆${(item as dynamic).difficulty}｜Day ${(item as dynamic).pushOrder}/365';
-
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: Row(
+                      return BubbleCard(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.schedule, size: 20),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  SizedBox(
-                                    width: 54,
-                                    child: Text('$hh:$mm',
-                                        style: TextStyle(
-                                            color: Colors.white
-                                                .withValues(alpha: 0.75),
-                                            fontSize: 12)),
+                                  Text(title,
+                                      style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w900)),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    when == null
+                                        ? '時間未知'
+                                        : '${when.year}-${when.month.toString().padLeft(2, '0')}-${when.day.toString().padLeft(2, '0')} '
+                                          '${when.hour.toString().padLeft(2, '0')}:${when.minute.toString().padLeft(2, '0')}',
+                                    style: TextStyle(
+                                        color: Colors.white.withValues(alpha: 0.75),
+                                        fontSize: 12),
                                   ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(title,
-                                            style: const TextStyle(
-                                                fontWeight: FontWeight.w900)),
-                                        const SizedBox(height: 4),
-                                        Text(sub,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                                color: Colors.white
-                                                    .withValues(alpha: 0.75),
-                                                fontSize: 12)),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  IconButton(
-                                    tooltip: '跳過下一則',
-                                    icon: const Icon(Icons.skip_next),
-                                    onPressed: () async {
-                                      final uid = ref.read(uidProvider);
-                                      await PushSkipStore.skip(
-                                        uid: uid,
-                                        productId: productId,
-                                        contentItemId: cid,
-                                        ttlDays: 4,
-                                      );
-                                      await PushOrchestrator.rescheduleNextDays(
-                                          ref: ref, days: 3);
-                                      ref.invalidate(upcomingTimelineProvider);
+                                ],
+                              ),
+                            ),
+                            if (isFirst)
+                              TextButton(
+                                onPressed: (pid.isEmpty || cid.isEmpty)
+                                    ? null
+                                    : () async {
+                                        final uid = ref.read(uidProvider);
+                                        await SkipNextStore.setSkip(
+                                          uid: uid,
+                                          productId: pid,
+                                          contentItemId: cid,
+                                        );
 
-                                      if (context.mounted) {
+                                        await PushOrchestrator.rescheduleNextDays(
+                                            ref: ref, days: 3);
+
+                                        ref.invalidate(upcomingTimelineProvider);
+
+                                        // ignore: use_build_context_synchronously
                                         ScaffoldMessenger.of(context)
                                             .showSnackBar(
                                           const SnackBar(
                                               content:
-                                                  Text('已跳過下一則，並重排未來 3 天推播')),
+                                                  Text('已跳過下一則，並重排未來 3 天')),
                                         );
-                                      }
-                                    },
-                                  ),
-                                ],
+                                      },
+                                child: const Text('跳過下一則'),
                               ),
-                            );
-                          }),
-                        ],
-                      ),
-                    ),
+                          ],
+                        ),
+                      );
+                    },
                   );
-                }).toList(),
+                },
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, _) => Text('products error: $e'),
               );
             },
             loading: () => const Center(child: CircularProgressIndicator()),

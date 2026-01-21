@@ -25,6 +25,7 @@ class HomePage extends ConsumerWidget {
     final hot = ref.watch(featuredProductsProvider('hot_all'));
     final newArrivals = ref.watch(featuredProductsProvider('new_arrivals'));
     final comingSoon = ref.watch(featuredProductsProvider('coming_soon'));
+    final autoNew = ref.watch(autoNewArrivalsProvider);
     final tokens = context.tokens;
 
     return SafeArea(
@@ -77,41 +78,31 @@ class HomePage extends ConsumerWidget {
 
           // 本週新泡泡
           const _Section(title: '本週新泡泡'),
-          newArrivals.when(
-            data: (ps) => ps.isEmpty
-                ? AppCard(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(
-                        '本週新泡泡: 無資料（請檢查 Firestore featured_lists/new_arrivals）',
-                        style: TextStyle(color: tokens.textSecondary),
+          if (autoNew.isNotEmpty)
+            _SmallRail(products: autoNew, badgeText: 'NEW')
+          else
+            newArrivals.when(
+              data: (ps) => ps.isEmpty
+                  ? AppCard(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          '尚無新上架（可建立 featured_lists/new_arrivals 或補 createdAtMs）',
+                          style: TextStyle(color: tokens.textSecondary),
+                        ),
                       ),
-                    ),
-                  )
-                : _Rail(products: ps, ctaText: '新上架'),
-            loading: () => const SizedBox(
-                height: 210, child: Center(child: CircularProgressIndicator())),
-            error: (err, stack) => AppCard(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('本週新泡泡錯誤:',
-                        style: TextStyle(
-                            color: tokens.textPrimary,
-                            fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 4),
-                    Text('$err',
-                        style: TextStyle(
-                            color: tokens.textSecondary, fontSize: 12),
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis),
-                  ],
+                    )
+                  : _SmallRail(products: ps, badgeText: 'NEW'),
+              loading: () => const SizedBox(
+                  height: 180, child: Center(child: CircularProgressIndicator())),
+              error: (err, stack) => AppCard(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text('$err',
+                      style: TextStyle(color: tokens.textSecondary)),
                 ),
               ),
             ),
-          ),
           const SizedBox(height: 18),
 
           // 即將上架
@@ -122,14 +113,18 @@ class HomePage extends ConsumerWidget {
                     child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Text(
-                        '即將上架: 無資料（請檢查 Firestore featured_lists/coming_soon）',
+                        '尚無即將上架（請建立 featured_lists/coming_soon）',
                         style: TextStyle(color: tokens.textSecondary),
                       ),
                     ),
                   )
-                : _Rail(products: ps, ctaText: '即將上架'),
+                : _SmallRail(
+                    products: ps,
+                    badgeText: 'SOON',
+                    isDim: true,
+                  ),
             loading: () => const SizedBox(
-                height: 210, child: Center(child: CircularProgressIndicator())),
+                height: 180, child: Center(child: CircularProgressIndicator())),
             error: (err, stack) => AppCard(
               child: Padding(
                 padding: const EdgeInsets.all(16),
@@ -142,8 +137,7 @@ class HomePage extends ConsumerWidget {
                             fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
                     Text('$err',
-                        style: TextStyle(
-                            color: tokens.textSecondary, fontSize: 12),
+                        style: TextStyle(color: tokens.textSecondary, fontSize: 12),
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis),
                   ],
@@ -524,6 +518,146 @@ class _Rail extends StatelessWidget {
                     ),
                   );
                 },
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _SmallRail extends StatelessWidget {
+  final List<Product> products;
+  final String badgeText;
+  final bool isDim;
+
+  const _SmallRail({
+    required this.products,
+    required this.badgeText,
+    this.isDim = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+
+    return SizedBox(
+      height: 180,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: products.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        itemBuilder: (_, i) {
+          final p = products[i];
+          final dt = p.releaseAt;
+          final badge = (dt == null) ? badgeText : '${dt.month}/${dt.day}';
+          return AppCard(
+            padding: EdgeInsets.zero,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => ProductPage(productId: p.id)),
+            ),
+            child: SizedBox(
+              width: 220,
+              child: Stack(
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // image
+                      if (p.coverImageUrl != null && p.coverImageUrl!.isNotEmpty)
+                        ClipRRect(
+                          borderRadius:
+                              const BorderRadius.vertical(top: Radius.circular(20)),
+                          child: Image.network(
+                            p.coverImageUrl!,
+                            width: double.infinity,
+                            height: 105,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              height: 105,
+                              color: tokens.chipBg,
+                              child: Icon(Icons.image_not_supported,
+                                  color: tokens.textSecondary),
+                            ),
+                          ),
+                        )
+                      else
+                        Container(
+                          height: 105,
+                          color: tokens.chipBg,
+                          child: Icon(Icons.auto_awesome,
+                              color: tokens.textSecondary),
+                        ),
+
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                p.title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w900,
+                                  color: tokens.textPrimary.withValues(
+                                      alpha: isDim ? 0.75 : 1.0),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${p.topicId} · ${p.level}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: tokens.textSecondary.withValues(
+                                      alpha: isDim ? 0.65 : 1.0),
+                                ),
+                              ),
+                              if (isDim) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  dt == null
+                                      ? '即將上架'
+                                      : '上架：${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: tokens.textSecondary.withValues(alpha: 0.7),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  // badge
+                  Positioned(
+                    top: 10,
+                    left: 10,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(999),
+                        color: Colors.black.withValues(alpha: 0.35),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+                      ),
+                      child: Text(
+                        badge,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           );
