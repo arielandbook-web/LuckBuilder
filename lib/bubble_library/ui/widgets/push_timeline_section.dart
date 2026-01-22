@@ -1,27 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../notifications/scheduled_push_cache.dart';
 import '../push_product_config_page.dart';
+import '../../providers/providers.dart';
+import '../../notifications/push_orchestrator.dart';
+import '../../models/push_config.dart';
 import 'bubble_card.dart';
 
-class PushTimelineSection extends StatefulWidget {
+class PushTimelineSection extends ConsumerStatefulWidget {
   final Future<void> Function(ScheduledPushEntry entry)? onSkip;
 
   const PushTimelineSection({super.key, this.onSkip});
 
   @override
-  State<PushTimelineSection> createState() => PushTimelineSectionState();
+  ConsumerState<PushTimelineSection> createState() => PushTimelineSectionState();
 }
 
-class PushTimelineSectionState extends State<PushTimelineSection> {
-  // 勿擾：先本機
-  static const _kDndStartMin = 'dnd_start_min_v1';
-  static const _kDndEndMin = 'dnd_end_min_v1';
-
-  int _startMin = 22 * 60 + 30;
-  int _endMin = 8 * 60;
+class PushTimelineSectionState extends ConsumerState<PushTimelineSection> {
   bool _loading = true;
-
   List<ScheduledPushEntry> _upcoming = const [];
 
   @override
@@ -35,7 +31,6 @@ class PushTimelineSectionState extends State<PushTimelineSection> {
 
   Future<void> _loadAll() async {
     setState(() => _loading = true);
-    final sp = await SharedPreferences.getInstance();
     final cache = ScheduledPushCache();
 
     final upcoming =
@@ -43,18 +38,29 @@ class PushTimelineSectionState extends State<PushTimelineSection> {
 
     if (!mounted) return;
     setState(() {
-      _startMin = sp.getInt(_kDndStartMin) ?? _startMin;
-      _endMin = sp.getInt(_kDndEndMin) ?? _endMin;
       _upcoming = upcoming;
       _loading = false;
     });
   }
 
-  Future<void> _saveDnd() async {
-    final sp = await SharedPreferences.getInstance();
-    await sp.setInt(_kDndStartMin, _startMin);
-    await sp.setInt(_kDndEndMin, _endMin);
+  /// ✅ 從 Firestore 讀取勿擾時段
+  TimeOfDay _getQuietHoursStart() {
+    final globalAsync = ref.watch(globalPushSettingsProvider);
+    return globalAsync.maybeWhen(
+      data: (g) => g.quietHours.start,
+      orElse: () => const TimeOfDay(hour: 22, minute: 0),
+    );
   }
+
+  TimeOfDay _getQuietHoursEnd() {
+    final globalAsync = ref.watch(globalPushSettingsProvider);
+    return globalAsync.maybeWhen(
+      data: (g) => g.quietHours.end,
+      orElse: () => const TimeOfDay(hour: 8, minute: 0),
+    );
+  }
+
+  int _toMinutes(TimeOfDay tod) => tod.hour * 60 + tod.minute;
 
   String _dateHeader(DateTime dt) {
     final y = dt.year.toString();
@@ -76,22 +82,31 @@ class PushTimelineSectionState extends State<PushTimelineSection> {
   }
 
   Future<void> _pickTime({required bool isStart}) async {
-    final currentMin = isStart ? _startMin : _endMin;
+    final current = isStart ? _getQuietHoursStart() : _getQuietHoursEnd();
     final picked = await showTimePicker(
       context: context,
-      initialTime: TimeOfDay(hour: currentMin ~/ 60, minute: currentMin % 60),
+      initialTime: current,
     );
     if (picked == null) return;
 
-    setState(() {
-      final v = picked.hour * 60 + picked.minute;
-      if (isStart) {
-        _startMin = v;
-      } else {
-        _endMin = v;
-      }
+    // ✅ 更新 Firestore 全域設定
+    final uid = ref.read(uidProvider);
+    final repo = ref.read(pushSettingsRepoProvider);
+    final globalAsync = ref.read(globalPushSettingsProvider);
+    
+    globalAsync.whenData((g) async {
+      final newQuietHours = isStart
+          ? TimeRange(picked, g.quietHours.end)
+          : TimeRange(g.quietHours.start, picked);
+      final newSettings = g.copyWith(quietHours: newQuietHours);
+      await repo.setGlobal(uid, newSettings);
+      // 觸發重排（使用新設定）
+      await PushOrchestrator.rescheduleNextDays(
+        ref: ref,
+        days: 3,
+        overrideGlobal: newSettings,
+      );
     });
-    await _saveDnd();
   }
 
   @override
@@ -204,24 +219,38 @@ class PushTimelineSectionState extends State<PushTimelineSection> {
         const Text('勿擾時段',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
         const SizedBox(height: 10),
-        BubbleCard(
-          child: Row(
-            children: [
-              const Icon(Icons.bedtime),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text('${_fmtMin(_startMin)} - ${_fmtMin(_endMin)}',
-                    style: const TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.w800)),
+        // ✅ 從 Firestore 讀取勿擾時段
+        ref.watch(globalPushSettingsProvider).when(
+          data: (g) {
+            final startMin = _toMinutes(g.quietHours.start);
+            final endMin = _toMinutes(g.quietHours.end);
+            return BubbleCard(
+              child: Row(
+                children: [
+                  const Icon(Icons.bedtime),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text('${_fmtMin(startMin)} - ${_fmtMin(endMin)}',
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w800)),
+                  ),
+                  OutlinedButton(
+                      onPressed: () => _pickTime(isStart: true),
+                      child: const Text('開始')),
+                  const SizedBox(width: 8),
+                  OutlinedButton(
+                      onPressed: () => _pickTime(isStart: false),
+                      child: const Text('結束')),
+                ],
               ),
-              OutlinedButton(
-                  onPressed: () => _pickTime(isStart: true),
-                  child: const Text('開始')),
-              const SizedBox(width: 8),
-              OutlinedButton(
-                  onPressed: () => _pickTime(isStart: false),
-                  child: const Text('結束')),
-            ],
+            );
+          },
+          loading: () => const BubbleCard(
+            child: Center(child: CircularProgressIndicator()),
+          ),
+          error: (_, __) => BubbleCard(
+            child: Text('載入錯誤',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.8))),
           ),
         ),
         const SizedBox(height: 8),

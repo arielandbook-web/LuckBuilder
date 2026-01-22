@@ -15,6 +15,7 @@ import 'product_page.dart';
 // 沒登入或不存在會自動 fallback，不會影響搜尋基本功能。
 import '../bubble_library/providers/providers.dart' as v1;
 import '../bubble_library/providers/providers.dart';
+import '../collections/wishlist_provider.dart';
 
 enum SearchSort { relevant, title, level }
 
@@ -151,7 +152,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     try {
       ref.read(v1.uidProvider);
       return ref
-          .watch(v1.wishlistProvider)
+          .watch(localWishlistProvider)
           .whenData((list) => list.cast<dynamic>());
     } catch (_) {
       return const AsyncValue.data(<dynamic>[]);
@@ -480,7 +481,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     // ✅ library 只用於「已購買/推播中」篩選與顯示，不會影響基本搜尋
     final libAsync = _watchLibrarySafe(ref);
     final libAsync2 = ref.watch(libraryProductsProvider);
-    final wishAsync = ref.watch(wishlistProvider);
+    final wishAsync = ref.watch(localWishlistProvider);
 
     final ownedFilter = ref.watch(searchOwnedFilterProvider);
     final pushFilter = ref.watch(searchPushFilterProvider);

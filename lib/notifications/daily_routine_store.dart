@@ -1,31 +1,28 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// 推播排程用的「日常優先順序」：orderedProductIds 越前面優先級越高。
+/// 原本與收藏集連動，移除收藏集後僅保留本結構供 push_orchestrator 使用。
 class DailyRoutine {
-  final String? activeCollectionId;
   final List<String> orderedProductIds;
   final int updatedAtMs;
 
   const DailyRoutine({
-    required this.activeCollectionId,
     required this.orderedProductIds,
     required this.updatedAtMs,
   });
 
   static DailyRoutine empty() => DailyRoutine(
-        activeCollectionId: null,
         orderedProductIds: const [],
         updatedAtMs: DateTime.now().millisecondsSinceEpoch,
       );
 
   Map<String, dynamic> toJson() => {
-        'activeCollectionId': activeCollectionId,
         'orderedProductIds': orderedProductIds,
         'updatedAtMs': updatedAtMs,
       };
 
   static DailyRoutine fromJson(Map<String, dynamic> j) => DailyRoutine(
-        activeCollectionId: j['activeCollectionId']?.toString(),
         orderedProductIds: (j['orderedProductIds'] is List)
             ? (j['orderedProductIds'] as List).map((e) => e.toString()).toList()
             : <String>[],

@@ -10,6 +10,7 @@ import '../../bubble_library/notifications/notification_service.dart';
 
 import '../../widgets/rich_sections/user_learning_store.dart';
 import '../../bubble_library/ui/product_library_page.dart';
+import '../../notifications/notification_inbox_store.dart';
 
 class HomeTodayTaskSection extends ConsumerWidget {
   final int dailyLimit; // 保留向後相容
@@ -166,6 +167,10 @@ class HomeTodayTaskSection extends ConsumerWidget {
                                                   .payload['productId']
                                                   ?.toString() ??
                                               '';
+                                          final cid = nextEntry
+                                                  .payload['contentItemId']
+                                                  ?.toString() ??
+                                              '';
                                           if (pid.isEmpty) return;
 
                                           // 記錄今日完成（全域）
@@ -174,6 +179,17 @@ class HomeTodayTaskSection extends ConsumerWidget {
                                           ref.invalidate(
                                               _globalLearnedTodayProvider);
 
+                                          // 標記推播為已開啟
+                                          if (pid.isNotEmpty && cid.isNotEmpty) {
+                                            final uid = ref.read(uidProvider);
+                                            await NotificationInboxStore
+                                                .markOpened(
+                                              uid,
+                                              productId: pid,
+                                              contentItemId: cid,
+                                            );
+                                          }
+
                                           // 進頁
                                           // ignore: use_build_context_synchronously
                                           Navigator.of(context)
@@ -181,6 +197,8 @@ class HomeTodayTaskSection extends ConsumerWidget {
                                             builder: (_) => ProductLibraryPage(
                                               productId: pid,
                                               isWishlistPreview: false,
+                                              initialContentItemId:
+                                                  cid.isNotEmpty ? cid : null,
                                             ),
                                           ));
                                         },

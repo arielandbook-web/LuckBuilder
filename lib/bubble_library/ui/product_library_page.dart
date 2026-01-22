@@ -245,6 +245,10 @@ class _ProductLibraryPageState extends ConsumerState<ProductLibraryPage> {
               icon: Icon((saved?.learned ?? false)
                   ? Icons.check_circle
                   : Icons.check_circle_outline),
+              // ✅ 注意：UI 中的「我學會了」使用 setSavedItem 作為降級方案
+              // 優先使用 LearningProgressService（需要 topicId 和 pushOrder）
+              // 但在 UI 中獲取這些資訊會增加複雜度，所以保留此方法
+              // 通知 action 中的「我學會了」會使用 LearningProgressService（見 bootstrapper.dart）
               onPressed: () => repo.setSavedItem(
                   uid!, it.id, {'learned': !(saved?.learned ?? false)}),
               tooltip: '我學會了',

@@ -9,11 +9,9 @@ import '../widgets/product_rail.dart';
 import '../theme/app_tokens.dart';
 import '../data/models.dart';
 import '../ui/rich_sections/home_today_task_section.dart';
-import '../ui/rich_sections/home_continue_section.dart';
 import '../ui/rich_sections/home_status_section.dart';
 import '../widgets/rich_sections/sections/home_for_you_section.dart';
 import '../widgets/rich_sections/user_learning_store.dart';
-import '../bubble_library/ui/product_library_page.dart';
 import 'product_page.dart';
 
 class HomePage extends ConsumerWidget {
@@ -57,21 +55,6 @@ class HomePage extends ConsumerWidget {
 
           // 今日任務區塊
           const HomeTodayTaskSection(dailyLimit: 20),
-          const SizedBox(height: 12),
-
-          // 繼續學習區塊
-          HomeContinueSection(
-            onContinue: (productId, day) {
-              Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => ProductLibraryPage(
-                  productId: productId,
-                  isWishlistPreview: false,
-                ),
-              ));
-            },
-          ),
-          const SizedBox(height: 12),
-
           // 學習狀態區塊
           const HomeStatusSection(),
           const SizedBox(height: 18),

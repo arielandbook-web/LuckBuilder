@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'models.dart';
 
 /// Firestore collection names (與 Console 一致：snake_case)
@@ -44,7 +45,7 @@ class DataRepository {
           .map((doc) => Segment.fromMap({...doc.data(), 'id': doc.id}))
           .toList();
     } catch (e) {
-      print('Error getting segments: $e');
+      debugPrint('Error getting segments: $e');
       return [];
     }
   }
@@ -62,7 +63,7 @@ class DataRepository {
           .map((doc) => Topic.fromDoc(doc.id, doc.data()))
           .toList();
     } catch (e) {
-      print('Error getting topics: $e');
+      debugPrint('Error getting topics: $e');
       return [];
     }
   }
@@ -81,7 +82,7 @@ class DataRepository {
           .map((doc) => Topic.fromDoc(doc.id, doc.data()))
           .toList();
     } catch (e) {
-      print('Error getting topics by tag: $e');
+      debugPrint('Error getting topics by tag: $e');
       return [];
     }
   }
@@ -99,7 +100,7 @@ class DataRepository {
           .map((doc) => FeaturedList.fromDoc(doc.id, doc.data()))
           .toList();
     } catch (e) {
-      print('Error getting featured lists: $e');
+      debugPrint('Error getting featured lists: $e');
       return [];
     }
   }
@@ -113,7 +114,7 @@ class DataRepository {
       }
       return null;
     } catch (e) {
-      print('Error getting featured list by id: $e');
+      debugPrint('Error getting featured list by id: $e');
       return null;
     }
   }
@@ -131,7 +132,7 @@ class DataRepository {
           .map((doc) => Product.fromDoc(doc.id, doc.data()))
           .toList();
     } catch (e) {
-      print('Error getting products: $e');
+      debugPrint('Error getting products: $e');
       return [];
     }
   }
@@ -150,7 +151,7 @@ class DataRepository {
           .map((doc) => Product.fromDoc(doc.id, doc.data()))
           .toList();
     } catch (e) {
-      print('Error getting products by topic id: $e');
+      debugPrint('Error getting products by topic id: $e');
       return [];
     }
   }
@@ -164,7 +165,7 @@ class DataRepository {
       }
       return null;
     } catch (e) {
-      print('Error getting product by id: $e');
+      debugPrint('Error getting product by id: $e');
       return null;
     }
   }
@@ -184,7 +185,7 @@ class DataRepository {
           .map((doc) => Product.fromDoc(doc.id, doc.data()))
           .toList();
     } catch (e) {
-      print('Error getting products by ids: $e');
+      debugPrint('Error getting products by ids: $e');
       return [];
     }
   }
@@ -202,7 +203,7 @@ class DataRepository {
           .map((doc) => ContentItem.fromDoc(doc.id, doc.data()))
           .toList();
     } catch (e) {
-      print('Error getting content items by product id: $e');
+      debugPrint('Error getting content items by product id: $e');
       return [];
     }
   }
@@ -222,7 +223,7 @@ class DataRepository {
           .map((doc) => ContentItem.fromDoc(doc.id, doc.data()))
           .toList();
     } catch (e) {
-      print('Error getting preview content items: $e');
+      debugPrint('Error getting preview content items: $e');
       return [];
     }
   }
@@ -236,7 +237,7 @@ class DataRepository {
       }
       return null;
     } catch (e) {
-      print('Error getting content item by id: $e');
+      debugPrint('Error getting content item by id: $e');
       return null;
     }
   }
@@ -274,7 +275,7 @@ class V2Repository {
       segments.sort((a, b) => a.order.compareTo(b.order));
       return segments;
     } catch (e) {
-      print('Error fetching segments: $e');
+      debugPrint('Error fetching segments: $e');
       return [];
     }
   }
@@ -295,7 +296,7 @@ class V2Repository {
           .map((doc) => Topic.fromDoc(doc.id, doc.data()))
           .toList();
     } catch (e) {
-      print('Error fetching topics for segment: $e');
+      debugPrint('Error fetching topics for segment: $e');
       return [];
     }
   }
@@ -313,7 +314,7 @@ class V2Repository {
       }
       return null;
     } catch (e) {
-      print('Error fetching featured list: $e');
+      debugPrint('Error fetching featured list: $e');
       return null;
     }
   }
@@ -336,7 +337,7 @@ class V2Repository {
 
       return ids.map((id) => productsMap[id]).whereType<Product>().toList();
     } catch (e) {
-      print('Error fetching products by ids ordered: $e');
+      debugPrint('Error fetching products by ids ordered: $e');
       return [];
     }
   }
@@ -355,7 +356,7 @@ class V2Repository {
           .map((doc) => Product.fromDoc(doc.id, doc.data()))
           .toList();
     } catch (e) {
-      print('Error fetching products by topic: $e');
+      debugPrint('Error fetching products by topic: $e');
       return [];
     }
   }
@@ -373,7 +374,7 @@ class V2Repository {
       }
       return null;
     } catch (e) {
-      print('Error fetching product: $e');
+      debugPrint('Error fetching product: $e');
       return null;
     }
   }
@@ -394,7 +395,7 @@ class V2Repository {
           .map((doc) => ContentItem.fromDoc(doc.id, doc.data()))
           .toList();
     } catch (e) {
-      print('Error fetching preview items: $e');
+      debugPrint('Error fetching preview items: $e');
       return [];
     }
   }
@@ -419,7 +420,7 @@ class V2Repository {
           .map((doc) => Product.fromDoc(doc.id, doc.data()))
           .toList();
     } catch (e) {
-      print('Error searching products: $e');
+      debugPrint('Error searching products: $e');
       return [];
     }
   }

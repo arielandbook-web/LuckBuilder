@@ -4,23 +4,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/global_push_settings.dart';
 import '../models/push_config.dart';
 import '../notifications/push_orchestrator.dart';
+import '../notifications/notification_service.dart';
 import '../providers/providers.dart';
-import '../../notifications/dnd_settings.dart';
-import '../../notifications/push_timeline_provider.dart';
 import 'push_product_config_page.dart';
 import 'widgets/bubble_card.dart';
 import 'widgets/push_inbox_section.dart';
-import 'widgets/push_smart_suggestions_section.dart';
-import 'widgets/push_smart_suggestions_card.dart';
 import '../../notifications/notification_inbox_page.dart';
 import '../../../pages/push_timeline_page.dart';
 import '../../notifications/timeline_meta_mode.dart';
 import '../../notifications/push_timeline_list.dart';
-
-final dndFuture = FutureProvider.autoDispose<DndSettings>((ref) async {
-  final uid = ref.read(uidProvider);
-  return DndSettingsStore.load(uid);
-});
 
 class PushCenterPage extends ConsumerWidget {
   const PushCenterPage({super.key});
@@ -58,6 +50,17 @@ class PushCenterPage extends ConsumerWidget {
                   .showSnackBar(const SnackBar(content: Text('已重排未來 3 天推播')));
             },
           ),
+          IconButton(
+            icon: const Icon(Icons.campaign),
+            tooltip: '試播一則',
+            onPressed: () async {
+              await NotificationService().showTestBubbleNotification();
+              // ignore: use_build_context_synchronously
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('已發送測試通知')),
+              );
+            },
+          ),
         ],
       ),
       body: ListView(
@@ -68,13 +71,6 @@ class PushCenterPage extends ConsumerWidget {
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (e, _) => Text('global error: $e'),
           ),
-
-          // ✅ 智慧建議卡（本機推斷）
-          const PushSmartSuggestionsCard(),
-          const SizedBox(height: 12),
-
-          // ✅ 智慧建議卡（嵌入現有畫面）
-          const PushSmartSuggestionsSection(),
 
           const SizedBox(height: 12),
           // ✅ 推播收件匣入口
@@ -191,13 +187,36 @@ class PushCenterPage extends ConsumerWidget {
           const Text('全域設定',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
           const SizedBox(height: 8),
-          SwitchListTile.adaptive(
-            value: g.enabled,
-            onChanged: (v) async {
-              await repo.setGlobal(uid, g.copyWith(enabled: v));
-              await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
-            },
-            title: const Text('啟用推播'),
+          SwitchTheme(
+            data: SwitchThemeData(
+              thumbColor: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.selected)) {
+                  return Theme.of(context).colorScheme.primary;
+                }
+                return null;
+              }),
+              trackColor: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.selected)) {
+                  return Theme.of(context).colorScheme.primary.withOpacity(0.5);
+                }
+                return null;
+              }),
+            ),
+            child: SwitchListTile.adaptive(
+              value: g.enabled,
+              onChanged: (v) async {
+                final newSettings = g.copyWith(enabled: v);
+                // ✅ 並行執行：寫入 Firestore 和重排同時進行
+                final writeFuture = repo.setGlobal(uid, newSettings);
+                final rescheduleFuture = PushOrchestrator.rescheduleNextDays(
+                  ref: ref,
+                  days: 3,
+                  overrideGlobal: newSettings,
+                );
+                await Future.wait([writeFuture, rescheduleFuture]);
+              },
+              title: const Text('啟用推播'),
+            ),
           ),
           ListTile(
             title: const Text('每日總上限（跨商品）'),
@@ -209,8 +228,15 @@ class PushCenterPage extends ConsumerWidget {
                   .toList(),
               onChanged: (v) async {
                 if (v == null) return;
-                await repo.setGlobal(uid, g.copyWith(dailyTotalCap: v));
-                await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
+                final newSettings = g.copyWith(dailyTotalCap: v);
+                // ✅ 並行執行：寫入 Firestore 和重排同時進行
+                final writeFuture = repo.setGlobal(uid, newSettings);
+                final rescheduleFuture = PushOrchestrator.rescheduleNextDays(
+                  ref: ref,
+                  days: 3,
+                  overrideGlobal: newSettings,
+                );
+                await Future.wait([writeFuture, rescheduleFuture]);
               },
             ),
           ),
@@ -224,8 +250,15 @@ class PushCenterPage extends ConsumerWidget {
                   .toList(),
               onChanged: (v) async {
                 if (v == null) return;
-                await repo.setGlobal(uid, g.copyWith(styleMode: v));
-                await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
+                final newSettings = g.copyWith(styleMode: v);
+                // ✅ 並行執行：寫入 Firestore 和重排同時進行
+                final writeFuture = repo.setGlobal(uid, newSettings);
+                final rescheduleFuture = PushOrchestrator.rescheduleNextDays(
+                  ref: ref,
+                  days: 3,
+                  overrideGlobal: newSettings,
+                );
+                await Future.wait([writeFuture, rescheduleFuture]);
               },
             ),
           ),
@@ -245,8 +278,14 @@ class PushCenterPage extends ConsumerWidget {
                 quietHours: TimeRange(start, end),
               );
 
-              await repo.setGlobal(uid, next);
-              await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
+              // ✅ 並行執行：寫入 Firestore 和重排同時進行
+              final writeFuture = repo.setGlobal(uid, next);
+              final rescheduleFuture = PushOrchestrator.rescheduleNextDays(
+                ref: ref,
+                days: 3,
+                overrideGlobal: next,
+              );
+              await Future.wait([writeFuture, rescheduleFuture]);
 
               // ignore: use_build_context_synchronously
               ScaffoldMessenger.of(context).showSnackBar(
@@ -269,8 +308,14 @@ class PushCenterPage extends ConsumerWidget {
                     const TimeOfDay(hour: 0, minute: 0),
                   ),
                 );
-                await repo.setGlobal(uid, next);
-                await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
+                // ✅ 並行執行：寫入 Firestore 和重排同時進行
+                final writeFuture = repo.setGlobal(uid, next);
+                final rescheduleFuture = PushOrchestrator.rescheduleNextDays(
+                  ref: ref,
+                  days: 3,
+                  overrideGlobal: next,
+                );
+                await Future.wait([writeFuture, rescheduleFuture]);
 
                 // ignore: use_build_context_synchronously
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -278,93 +323,6 @@ class PushCenterPage extends ConsumerWidget {
                 );
               },
             ),
-          ),
-          const Divider(height: 24),
-          FutureBuilder<DndSettings>(
-            future: DndSettingsStore.load(uid),
-            builder: (context, snap) {
-              final s0 = snap.data ?? DndSettings.defaults;
-
-              return StatefulBuilder(
-                builder: (context, setLocal) {
-                  Future<void> saveAndReschedule(DndSettings next) async {
-                    await DndSettingsStore.save(uid, next);
-                    await PushOrchestrator.rescheduleNextDays(
-                        ref: ref, days: 3);
-                    ref.invalidate(upcomingTimelineProvider);
-                    ref.invalidate(dndFuture);
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                            content: Text(
-                                '已更新勿擾：${next.enabled ? "${fmtTimeMin(next.startMin)}–${fmtTimeMin(next.endMin)}" : "關閉"}')),
-                      );
-                    }
-                  }
-
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('勿擾時段',
-                          style: TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.w900)),
-                      const SizedBox(height: 8),
-                      SwitchListTile.adaptive(
-                        value: s0.enabled,
-                        onChanged: (v) async {
-                          final next = s0.copyWith(enabled: v);
-                          setLocal(() {});
-                          await saveAndReschedule(next);
-                        },
-                        title: const Text('啟用勿擾（排程自動避開）'),
-                        subtitle: Text(
-                            '${fmtTimeMin(s0.startMin)}–${fmtTimeMin(s0.endMin)}'),
-                      ),
-                      if (s0.enabled) ...[
-                        ListTile(
-                          title: const Text('開始時間'),
-                          subtitle: Text(fmtTimeMin(s0.startMin)),
-                          trailing: const Icon(Icons.access_time),
-                          onTap: () async {
-                            final picked = await showTimePicker(
-                              context: context,
-                              initialTime: minToTimeOfDay(s0.startMin),
-                            );
-                            if (picked == null) return;
-                            final next =
-                                s0.copyWith(startMin: timeOfDayToMin(picked));
-                            setLocal(() {});
-                            await saveAndReschedule(next);
-                          },
-                        ),
-                        ListTile(
-                          title: const Text('結束時間'),
-                          subtitle: Text(fmtTimeMin(s0.endMin)),
-                          trailing: const Icon(Icons.access_time),
-                          onTap: () async {
-                            final picked = await showTimePicker(
-                              context: context,
-                              initialTime: minToTimeOfDay(s0.endMin),
-                            );
-                            if (picked == null) return;
-                            final next =
-                                s0.copyWith(endMin: timeOfDayToMin(picked));
-                            setLocal(() {});
-                            await saveAndReschedule(next);
-                          },
-                        ),
-                        Text(
-                          '提示：支援跨午夜（例如 22:00–07:00）',
-                          style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.7),
-                              fontSize: 12),
-                        ),
-                      ],
-                    ],
-                  );
-                },
-              );
-            },
           ),
           const SizedBox(height: 4),
           Text('更改設定後會自動重排未來 3 天推播',

@@ -101,7 +101,75 @@ flutterfire configure
 3. 選擇「以測試模式啟動」（開發階段）或「以生產模式啟動」
 4. 選擇資料庫位置（建議選擇離您最近的區域）
 
-## 步驟 6：驗證設定
+## 步驟 6：設定 Firestore 安全規則
+
+**重要**：如果遇到 `permission denied` 錯誤，必須設定正確的安全規則。
+
+1. 在 Firebase Console 中，前往「Firestore Database」→「規則」標籤
+2. 將以下規則複製並貼上：
+
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 公開集合：所有人可讀
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if false; // 僅管理員可寫
+    }
+    
+    match /content_items/{contentItemId} {
+      allow read: if true;
+      allow write: if false; // 僅管理員可寫
+    }
+    
+    match /topics/{topicId} {
+      allow read: if true;
+      allow write: if false; // 僅管理員可寫
+    }
+    
+    match /featured_lists/{listId} {
+      allow read: if true;
+      allow write: if false; // 僅管理員可寫
+    }
+    
+    match /ui/{document=**} {
+      allow read: if true;
+      allow write: if false; // 僅管理員可寫
+    }
+    
+    // 用戶專屬資料：只能讀寫自己的資料
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // 用戶的子集合
+      match /library_products/{productId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+      
+      match /wishlist/{productId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+      
+      match /saved_items/{contentItemId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+      
+      match /push_settings/{document=**} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+  }
+}
+```
+
+3. 點擊「發布」按鈕
+
+**規則說明：**
+- **公開集合**（`products`、`content_items`、`topics` 等）：所有人可讀取，僅管理員可寫入
+- **用戶專屬資料**（`users/{userId}/...`）：僅該用戶可讀寫，需要用戶已登入
+
+## 步驟 7：驗證設定
 
 執行以下命令檢查設定是否正確：
 
@@ -125,6 +193,21 @@ flutter run
 
 **錯誤：`Missing or insufficient permissions`**
 - 檢查 Firebase Console 中的 iOS Bundle ID 是否正確
+
+### Firestore 權限問題
+
+**錯誤：`permission denied. the caller does not have permission to execute the specified operation`**
+- **最常見原因**：Firestore 安全規則未正確設定
+- **解決方法**：
+  1. 前往 Firebase Console → Firestore Database → 規則
+  2. 確認已按照「步驟 6：設定 Firestore 安全規則」設定規則
+  3. 確認規則已發布（點擊「發布」按鈕）
+  4. 確認用戶已登入（`request.auth != null`）
+  5. 確認用戶嘗試存取的是自己的資料（`request.auth.uid == userId`）
+
+**錯誤：`timeline error: permission denied`**
+- 這是 Firestore 安全規則問題，請參考上述解決方法
+- 特別檢查 `users/{uid}/library_products`、`users/{uid}/saved_items`、`users/{uid}/push_settings/global` 的規則是否正確
 
 ### Android 設定問題
 

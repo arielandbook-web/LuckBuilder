@@ -6,6 +6,7 @@ import '../../app_card.dart';
 
 import '../../../providers/v2_providers.dart';
 import '../../../bubble_library/providers/providers.dart';
+import '../../../collections/wishlist_provider.dart';
 import '../../../data/models.dart';
 import '../../../pages/product_page.dart';
 
@@ -220,7 +221,7 @@ class CategoryNetflixRails extends ConsumerWidget {
   AsyncValue<List<dynamic>> _safeWish(WidgetRef ref) {
     try {
       ref.read(uidProvider);
-      return ref.watch(wishlistProvider);
+      return ref.watch(localWishlistProvider);
     } catch (_) {
       return const AsyncValue.data(<dynamic>[]);
     }

@@ -27,6 +27,9 @@ class PushScheduler {
     final end = _todToMin(q.end);
     final cur = _todToMin(t);
 
+    // ✅ 修復：start == end 時視為「無勿擾時段」（例如 0:0 - 0:0）
+    if (start == end) return false;
+
     if (start < end) return cur >= start && cur < end; // same-day
     return cur >= start || cur < end; // crosses midnight
   }

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/global_push_settings.dart';
@@ -11,6 +12,8 @@ import '../../notifications/daily_routine_store.dart';
 import '../../notifications/skip_next_store.dart';
 // ✅ 新增：排程時寫入 Inbox（本機真資料）
 import '../../notifications/notification_inbox_store.dart';
+// ✅ 新增：排程快取同步
+import 'scheduled_push_cache.dart';
 
 class PushOrchestrator {
   static Map<String, dynamic>? decodePayload(String? payload) {
@@ -26,9 +29,12 @@ class PushOrchestrator {
   /// ✅ 已整合：
   /// - 真排序：DailyRoutine（本機 orderedProductIds）
   /// - Skip next：本機 skip contentItemId（只在 reschedule 時消耗）
+  /// 
+  /// [overrideGlobal] 可選：如果提供，會優先使用此設定（用於立即更新時避免讀到舊值）
   static Future<void> rescheduleNextDays({
     required WidgetRef ref,
     int days = 3,
+    GlobalPushSettings? overrideGlobal,
   }) async {
     final uid = ref.read(uidProvider);
 
@@ -36,10 +42,14 @@ class PushOrchestrator {
     final productsMap = await ref.read(productsMapProvider.future);
 
     GlobalPushSettings global;
-    try {
-      global = await ref.read(globalPushSettingsProvider.future);
-    } catch (_) {
-      global = GlobalPushSettings.defaults();
+    if (overrideGlobal != null) {
+      global = overrideGlobal;
+    } else {
+      try {
+        global = await ref.read(globalPushSettingsProvider.future);
+      } catch (_) {
+        global = GlobalPushSettings.defaults();
+      }
     }
 
     Map<String, SavedContent> savedMap;
@@ -73,6 +83,34 @@ class PushOrchestrator {
       contentByProduct[entry.key] = list;
     }
 
+    // ✅ 診斷：顯示排程前的狀態
+    if (kDebugMode) {
+      debugPrint('📅 ===== rescheduleNextDays 開始 =====');
+      debugPrint('  - uid: $uid');
+      debugPrint('  - days: $days');
+      debugPrint('  - global.enabled: ${global.enabled}');
+      debugPrint('  - global.dailyTotalCap: ${global.dailyTotalCap}');
+      debugPrint('  - global.quietHours: ${global.quietHours.start.hour}:${global.quietHours.start.minute} - ${global.quietHours.end.hour}:${global.quietHours.end.minute}');
+      debugPrint('  - libMap 產品數量: ${libMap.length}');
+      
+      final pushingProducts = libMap.values.where((p) => p.pushEnabled && !p.isHidden).toList();
+      debugPrint('  - 推播中的產品: ${pushingProducts.length}');
+      for (final p in pushingProducts) {
+        final cfg = p.pushConfig;
+        debugPrint('    • ${p.productId}:');
+        debugPrint('      - pushEnabled: ${p.pushEnabled}, hidden: ${p.isHidden}');
+        debugPrint('      - freq: ${cfg.freqPerDay}, timeMode: ${cfg.timeMode.name}');
+        debugPrint('      - presetSlots: ${cfg.presetSlots}');
+        debugPrint('      - daysOfWeek: ${cfg.daysOfWeek}');
+        debugPrint('      - quietHours: ${cfg.quietHours.start.hour}:${cfg.quietHours.start.minute} - ${cfg.quietHours.end.hour}:${cfg.quietHours.end.minute}');
+      }
+      
+      debugPrint('  - contentByProduct 數量: ${contentByProduct.length}');
+      for (final entry in contentByProduct.entries) {
+        debugPrint('    • ${entry.key}: ${entry.value.length} 個內容項目');
+      }
+    }
+
     // ✅ 建 schedule（已帶 productOrder → 真排序）
     final tasks = PushScheduler.buildSchedule(
       now: DateTime.now(),
@@ -85,9 +123,33 @@ class PushOrchestrator {
       productOrder: productOrder,
     );
 
+    // ✅ 診斷：顯示排程結果
+    if (kDebugMode) {
+      debugPrint('  - 產生的 tasks: ${tasks.length}');
+      if (tasks.isEmpty && global.enabled) {
+        debugPrint('  ⚠️ 警告：推播已啟用但沒有產生任何排程！');
+        debugPrint('  可能原因：');
+        debugPrint('    1. 沒有啟用推播的產品');
+        debugPrint('    2. 產品沒有內容項目');
+        debugPrint('    3. 所有時間都在勿擾時段內');
+        debugPrint('    4. 星期幾設定不允許今天推播');
+      } else {
+        for (int i = 0; i < tasks.length && i < 5; i++) {
+          final t = tasks[i];
+          debugPrint('    [$i] ${t.when} - ${t.productId} - ${t.item.id}');
+        }
+        if (tasks.length > 5) {
+          debugPrint('    ... 還有 ${tasks.length - 5} 筆');
+        }
+      }
+      debugPrint('📅 ===== rescheduleNextDays 結束 =====');
+    }
+
     // ✅ 先取消全部，再依新 tasks schedule
     final ns = NotificationService();
+    final cache = ScheduledPushCache();
     await ns.cancelAll();
+    await cache.clear(); // ✅ 同步清除快取
 
     int idSeed = DateTime.now().millisecondsSinceEpoch.remainder(1000000);
 
@@ -118,7 +180,9 @@ class PushOrchestrator {
         continue;
       }
 
-      final productTitle = productsMap[t.productId]?.title ?? t.productId;
+      final product = productsMap[t.productId];
+      final productTitle = product?.title ?? t.productId;
+      final topicId = product?.topicId ?? '';
 
       final title =
           t.item.anchorGroup.isNotEmpty ? t.item.anchorGroup : productTitle;
@@ -131,6 +195,10 @@ class PushOrchestrator {
         'uid': uid,
         'productId': t.productId,
         'contentItemId': t.item.id,
+        // ✅ 加入 topicId 和 pushOrder，供 LearningProgressService 使用
+        'topicId': topicId,
+        'contentId': t.item.id, // 兼容性：contentId 和 contentItemId 都提供
+        'pushOrder': t.item.pushOrder,
       };
 
       await ns.schedule(
@@ -141,7 +209,8 @@ class PushOrchestrator {
         payload: payload,
       );
 
-      // ✅ 排程成功就寫入 Inbox（本機真資料）
+      // ✅ 排程成功後，同步寫入兩個快取
+      // 1. NotificationInboxStore（收件匣）
       await NotificationInboxStore.upsertScheduled(
         uid: uid,
         productId: t.productId,
@@ -150,6 +219,14 @@ class PushOrchestrator {
         title: title,
         body: body,
       );
+      
+      // 2. ScheduledPushCache（排程快取，用於時間表顯示）
+      await cache.add(ScheduledPushEntry(
+        when: t.when,
+        title: title,
+        body: body,
+        payload: payload,
+      ));
     }
 
     // ✅ 只有在 reschedule 完成後，才消耗 skip

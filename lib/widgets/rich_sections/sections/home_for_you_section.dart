@@ -6,6 +6,7 @@ import '../../app_card.dart';
 
 import '../../../providers/v2_providers.dart';
 import '../../../bubble_library/providers/providers.dart';
+import '../../../collections/wishlist_provider.dart';
 import '../../../data/models.dart';
 import '../../../pages/product_page.dart';
 
@@ -30,7 +31,7 @@ class HomeForYouSection extends ConsumerWidget {
         ? ref.watch(libraryProductsProvider)
         : const AsyncValue.data(<dynamic>[]);
     final wishAsync = loggedIn
-        ? ref.watch(wishlistProvider)
+        ? ref.watch(localWishlistProvider)
         : const AsyncValue.data(<dynamic>[]);
 
     return AppCard(

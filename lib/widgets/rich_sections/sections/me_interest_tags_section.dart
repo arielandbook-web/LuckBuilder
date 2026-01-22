@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../theme/app_tokens.dart';
 import '../../app_card.dart';
 import '../../../bubble_library/providers/providers.dart';
+import '../../../collections/wishlist_provider.dart';
 import '../user/me_prefs_store.dart';
 
 class MeInterestTagsSection extends ConsumerStatefulWidget {
@@ -166,7 +167,7 @@ class _MeInterestTagsSectionState extends ConsumerState<MeInterestTagsSection> {
   AsyncValue<List<dynamic>> _safeWish() {
     try {
       ref.read(uidProvider);
-      return ref.watch(wishlistProvider);
+      return ref.watch(localWishlistProvider);
     } catch (_) {
       return const AsyncValue.data(<dynamic>[]);
     }

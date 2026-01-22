@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../bubble_library/providers/providers.dart';
 import '../bubble_library/ui/product_library_page.dart';
+import '../widgets/app_card.dart';
+import '../theme/app_tokens.dart';
 import 'notification_inbox_provider.dart';
 import 'notification_inbox_store.dart';
 
@@ -14,6 +16,38 @@ class NotificationInboxPage extends ConsumerWidget {
     this.showMissedOnly = false,
   });
 
+  /// 處理點擊項目：markOpened → invalidate → navigate
+  Future<void> _handleItemTap(
+    BuildContext context,
+    WidgetRef ref,
+    String uid,
+    InboxItem item,
+  ) async {
+    // 標記為已讀
+    await NotificationInboxStore.markOpened(
+      uid,
+      productId: item.productId,
+      contentItemId: item.contentItemId,
+    );
+
+    // 刷新 providers
+    ref.invalidate(inboxItemsProvider);
+    ref.invalidate(inboxUnreadCountProvider);
+
+    // 導航到產品頁
+    if (context.mounted) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ProductLibraryPage(
+            productId: item.productId,
+            isWishlistPreview: false,
+            initialContentItemId: item.contentItemId,
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     String uid;
@@ -23,6 +57,7 @@ class NotificationInboxPage extends ConsumerWidget {
       return const Scaffold(body: Center(child: Text('請先登入')));
     }
 
+    final tokens = context.tokens;
     final asyncItems = ref.watch(inboxItemsProvider);
 
     return Scaffold(
@@ -34,6 +69,7 @@ class NotificationInboxPage extends ConsumerWidget {
               onPressed: () async {
                 await NotificationInboxStore.clearMissed(uid);
                 ref.invalidate(inboxItemsProvider);
+                ref.invalidate(inboxUnreadCountProvider);
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('已清空錯過的推播')),
@@ -47,6 +83,7 @@ class NotificationInboxPage extends ConsumerWidget {
               onPressed: () async {
                 await NotificationInboxStore.clearMissed(uid);
                 ref.invalidate(inboxItemsProvider);
+                ref.invalidate(inboxUnreadCountProvider);
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('已清空錯過的推播')),
@@ -61,6 +98,7 @@ class NotificationInboxPage extends ConsumerWidget {
               onPressed: () async {
                 await NotificationInboxStore.clearAll(uid);
                 ref.invalidate(inboxItemsProvider);
+                ref.invalidate(inboxUnreadCountProvider);
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('已全部清空')),
@@ -77,14 +115,15 @@ class NotificationInboxPage extends ConsumerWidget {
           final displayItems = showMissedOnly
               ? items.where((e) => e.status == InboxStatus.missed).toList()
               : items;
-          
-          final missed = items.where((e) => e.status == InboxStatus.missed).toList();
-          
+
           if (displayItems.isEmpty) {
             return Center(
-              child: Text(showMissedOnly 
-                  ? '太棒了！最近沒有漏掉的推播' 
-                  : '目前收件匣是空的'),
+              child: Text(
+                showMissedOnly
+                    ? '太棒了！最近沒有漏掉的推播'
+                    : '目前收件匣是空的',
+                style: TextStyle(color: tokens.textSecondary),
+              ),
             );
           }
 
@@ -93,80 +132,99 @@ class NotificationInboxPage extends ConsumerWidget {
             itemCount: displayItems.length,
             separatorBuilder: (_, __) => const SizedBox(height: 10),
             itemBuilder: (context, i) {
-              final it = displayItems[i];
-              final when = DateTime.fromMillisecondsSinceEpoch(it.whenMs);
+              final item = displayItems[i];
+              final when = DateTime.fromMillisecondsSinceEpoch(item.whenMs);
+              final isRead = item.status == InboxStatus.opened;
 
-              final badge = switch (it.status) {
-                InboxStatus.missed => '錯過',
-                InboxStatus.opened => '已開啟',
-                InboxStatus.scheduled => '已排程',
-                InboxStatus.skipped => '已跳過',
-              };
-
-              return Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
+              return Opacity(
+                opacity: isRead ? 0.65 : 1.0,
+                child: AppCard(
+                  onTap: () => _handleItemTap(context, ref, uid, item),
+                  padding: const EdgeInsets.all(14),
+                  child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Text(_fmt(when),
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w900, fontSize: 13)),
-                          const Spacer(),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(color: Colors.black12),
-                            ),
-                            child: Text(badge, style: const TextStyle(fontSize: 12)),
+                      // 未讀 dot（左側）
+                      if (!isRead) ...[
+                        Container(
+                          width: 8,
+                          height: 8,
+                          margin: const EdgeInsets.only(top: 6, right: 12),
+                          decoration: BoxDecoration(
+                            color: tokens.primary,
+                            shape: BoxShape.circle,
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(it.title,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w900, fontSize: 16)),
-                      const SizedBox(height: 6),
-                      Text(
-                        it.body,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          OutlinedButton.icon(
-                            icon: const Icon(Icons.visibility),
-                            label: const Text('補看'),
-                            onPressed: () async {
-                              await NotificationInboxStore.markOpened(
-                                uid,
-                                productId: it.productId,
-                                contentItemId: it.contentItemId,
-                              );
-                              ref.invalidate(inboxItemsProvider);
-
-                              if (context.mounted) {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => ProductLibraryPage(
-                                      productId: it.productId,
-                                      isWishlistPreview: false,
-                                      initialContentItemId: it.contentItemId,
+                        ),
+                      ] else
+                        const SizedBox(width: 20), // 已讀時保留空間
+                      // 內容
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // 時間 + 狀態 badge
+                            Row(
+                              children: [
+                                Text(
+                                  _fmt(when),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: isRead
+                                        ? tokens.textSecondary
+                                        : tokens.textPrimary,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(999),
+                                    color: tokens.chipBg,
+                                    border: Border.all(
+                                      color: tokens.cardBorder,
+                                      width: 0.5,
                                     ),
                                   ),
-                                );
-                              }
-                            },
-                          ),
-                          const SizedBox(width: 10),
-                          if (it.status == InboxStatus.missed)
-                            Text('錯過共 ${missed.length} 則',
-                                style: const TextStyle(fontSize: 12, color: Colors.black54)),
-                        ],
+                                  child: Text(
+                                    _getStatusBadge(item.status),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: tokens.textSecondary,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            // 標題
+                            Text(
+                              item.title,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: isRead
+                                    ? tokens.textSecondary
+                                    : tokens.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            // 內容預覽
+                            Text(
+                              item.body,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: tokens.textSecondary,
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -176,7 +234,12 @@ class NotificationInboxPage extends ConsumerWidget {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('inbox error: $e')),
+        error: (e, _) => Center(
+          child: Text(
+            'inbox error: $e',
+            style: TextStyle(color: tokens.textSecondary),
+          ),
+        ),
       ),
     );
   }
@@ -188,5 +251,18 @@ class NotificationInboxPage extends ConsumerWidget {
     final hh = dt.hour.toString().padLeft(2, '0');
     final mm = dt.minute.toString().padLeft(2, '0');
     return '$y-$m-$d  $hh:$mm';
+  }
+
+  String _getStatusBadge(InboxStatus status) {
+    switch (status) {
+      case InboxStatus.missed:
+        return '錯過';
+      case InboxStatus.opened:
+        return '已開啟';
+      case InboxStatus.scheduled:
+        return '已排程';
+      case InboxStatus.skipped:
+        return '已跳過';
+    }
   }
 }

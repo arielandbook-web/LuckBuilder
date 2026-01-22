@@ -5,6 +5,7 @@ import '../../../theme/app_tokens.dart';
 import '../../app_card.dart';
 
 import '../../../bubble_library/providers/providers.dart';
+import '../../../collections/wishlist_provider.dart';
 import '../../../pages/product_page.dart';
 
 class MeDashboardSection extends ConsumerWidget {
@@ -41,8 +42,9 @@ class MeDashboardSection extends ConsumerWidget {
     }
 
     final libAsync = ref.watch(libraryProductsProvider);
-    final wishAsync = ref.watch(wishlistProvider);
+    final wishAsync = ref.watch(localWishlistProvider);
     final productsMapAsync = ref.watch(productsMapProvider);
+    final globalPushAsync = ref.watch(globalPushSettingsProvider);
 
     return AppCard(
       padding: const EdgeInsets.all(14),
@@ -57,36 +59,40 @@ class MeDashboardSection extends ConsumerWidget {
           const SizedBox(height: 12),
           productsMapAsync.when(
             data: (productsMap) {
-              return libAsync.when(
-                data: (lib) {
-                  return wishAsync.when(
-                    data: (wish) {
-                      final purchased = lib.where((e) {
-                        try {
-                          return (e as dynamic).isHidden != true &&
-                              productsMap.containsKey(
-                                  (e as dynamic).productId.toString());
-                        } catch (_) {
-                          return false;
-                        }
-                      }).toList();
+              return globalPushAsync.when(
+                data: (globalPush) {
+                  return libAsync.when(
+                    data: (lib) {
+                      return wishAsync.when(
+                        data: (wish) {
+                          final purchased = lib.where((e) {
+                            try {
+                              return (e as dynamic).isHidden != true &&
+                                  productsMap.containsKey(
+                                      (e as dynamic).productId.toString());
+                            } catch (_) {
+                              return false;
+                            }
+                          }).toList();
 
-                      final wishlist = wish.where((w) {
-                        try {
-                          return productsMap
-                              .containsKey((w as dynamic).productId.toString());
-                        } catch (_) {
-                          return false;
-                        }
-                      }).toList();
+                          final wishlist = wish.where((w) {
+                            try {
+                              return productsMap
+                                  .containsKey((w as dynamic).productId.toString());
+                            } catch (_) {
+                              return false;
+                            }
+                          }).toList();
 
-                      final pushingCount = purchased.where((e) {
-                        try {
-                          return (e as dynamic).pushEnabled == true;
-                        } catch (_) {
-                          return false;
-                        }
-                      }).length;
+                          // 計算推播中數量：需要同時檢查全域推播開關和個別商品推播開關
+                          final pushingCount = purchased.where((e) {
+                            try {
+                              return globalPush.enabled &&
+                                  (e as dynamic).pushEnabled == true;
+                            } catch (_) {
+                              return false;
+                            }
+                          }).length;
 
                       final favIds = <String>{};
                       for (final lp in purchased) {
@@ -199,7 +205,7 @@ class MeDashboardSection extends ConsumerWidget {
                             ...recentTop.map((lp) {
                               final pid = (lp as dynamic).productId.toString();
                               final title = productsMap[pid]?.title ?? pid;
-                              final sub = _recentSubtitle(lp);
+                              final sub = _recentSubtitle(lp, globalPushEnabled: globalPush.enabled);
                               return _recentTile(
                                 context,
                                 title: title,
@@ -229,15 +235,20 @@ class MeDashboardSection extends ConsumerWidget {
                           ],
                         ],
                       );
+                        },
+                        loading: () =>
+                            const Center(child: CircularProgressIndicator()),
+                        error: (e, _) => Text('wishlist error: $e',
+                            style: TextStyle(color: tokens.textSecondary)),
+                      );
                     },
-                    loading: () =>
-                        const Center(child: CircularProgressIndicator()),
-                    error: (e, _) => Text('wishlist error: $e',
+                    loading: () => const Center(child: CircularProgressIndicator()),
+                    error: (e, _) => Text('library error: $e',
                         style: TextStyle(color: tokens.textSecondary)),
                   );
                 },
                 loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, _) => Text('library error: $e',
+                error: (e, _) => Text('global push error: $e',
                     style: TextStyle(color: tokens.textSecondary)),
               );
             },
@@ -250,7 +261,7 @@ class MeDashboardSection extends ConsumerWidget {
     );
   }
 
-  String _recentSubtitle(dynamic lp) {
+  String _recentSubtitle(dynamic lp, {required bool globalPushEnabled}) {
     // 不靠 Excel：用 pushEnabled / purchasedAt / lastOpenedAt 組一個資訊密度
     String whenText(DateTime? dt) {
       if (dt == null) return '';
@@ -260,7 +271,7 @@ class MeDashboardSection extends ConsumerWidget {
 
     DateTime? opened;
     DateTime? purchased;
-    bool pushing = false;
+    bool itemPushEnabled = false;
 
     try {
       opened = (lp.lastOpenedAt as DateTime?);
@@ -269,8 +280,11 @@ class MeDashboardSection extends ConsumerWidget {
       purchased = (lp.purchasedAt as DateTime?);
     } catch (_) {}
     try {
-      pushing = (lp.pushEnabled == true);
+      itemPushEnabled = (lp.pushEnabled == true);
     } catch (_) {}
+
+    // 推播狀態：需要全域推播開關和個別商品推播開關都啟用才算推播中
+    final pushing = globalPushEnabled && itemPushEnabled;
 
     final parts = <String>[];
     if (opened != null) parts.add('上次：${whenText(opened)}');

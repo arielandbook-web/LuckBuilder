@@ -7,6 +7,7 @@ import '../bubble_library/notifications/push_scheduler.dart';
 import '../notifications/skip_next_store.dart';
 import '../notifications/push_timeline_provider.dart';
 import '../bubble_library/ui/product_library_page.dart';
+import 'notification_inbox_store.dart';
 
 import 'timeline_meta_mode.dart';
 import 'widgets/timeline_widgets.dart';
@@ -41,6 +42,7 @@ class PushTimelineList extends ConsumerWidget {
     final productsAsync = ref.watch(productsMapProvider);
     final libAsync = ref.watch(libraryProductsProvider);
     final savedAsync = ref.watch(savedItemsProvider);
+    final globalPushAsync = ref.watch(globalPushSettingsProvider);
 
     Widget topBar() {
       if (!showTopBar) return const SizedBox.shrink();
@@ -187,16 +189,58 @@ class PushTimelineList extends ConsumerWidget {
 
             return savedAsync.when(
               data: (savedMap) {
-                return timelineAsync.when(
-                  data: (items) {
-                    if (items.isEmpty) {
-                      return Column(
-                        children: [
-                          if (showTopBar) topBar() else sheetHeader(),
-                          const Expanded(child: Center(child: Text('目前沒有已排程的推播'))),
-                        ],
-                      );
-                    }
+                return globalPushAsync.when(
+                  data: (globalPush) {
+                    return timelineAsync.when(
+                      data: (items) {
+                        if (items.isEmpty) {
+                          // 檢查為什麼沒有排程
+                          final pushingProducts = lib.where((e) => !e.isHidden && e.pushEnabled).toList();
+                          String emptyMessage;
+                          if (!globalPush.enabled) {
+                            emptyMessage = '全域推播已關閉\n請在「推播中心」開啟推播功能';
+                          } else if (pushingProducts.isEmpty) {
+                            emptyMessage = '目前沒有推播中的商品\n請在「推播中心」啟用商品的推播功能';
+                          } else {
+                            emptyMessage = '目前沒有已排程的推播\n可能是勿擾時段或日期設定限制';
+                          }
+                          
+                          return Column(
+                            children: [
+                              if (showTopBar) topBar() else sheetHeader(),
+                              Expanded(
+                                child: Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(24),
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          !globalPush.enabled 
+                                            ? Icons.notifications_off
+                                            : pushingProducts.isEmpty
+                                              ? Icons.notifications_paused
+                                              : Icons.schedule_outlined,
+                                          size: 64,
+                                          color: Colors.white.withValues(alpha: 0.5),
+                                        ),
+                                        const SizedBox(height: 16),
+                                        Text(
+                                          emptyMessage,
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                            color: Colors.white.withValues(alpha: 0.8),
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        }
 
                     // build rows (header + items)
                     final rows = <TLRow>[];
@@ -334,7 +378,16 @@ class PushTimelineList extends ConsumerWidget {
                                                 vertical: 8,
                                               ),
                                             ),
-                                            onPressed: () {
+                                            onPressed: () async {
+                                              // 標記推播為已開啟
+                                              await NotificationInboxStore
+                                                  .markOpened(
+                                                uid,
+                                                productId: productId,
+                                                contentItemId: contentItemId,
+                                              );
+
+                                              // ignore: use_build_context_synchronously
                                               Navigator.of(context).push(
                                                 MaterialPageRoute(
                                                   builder: (_) => ProductLibraryPage(
@@ -374,20 +427,24 @@ class PushTimelineList extends ConsumerWidget {
                           ),
                         ),
                       ],
-                    );
-                  },
-                  loading: () => Column(
-                    children: [
-                      if (showTopBar) topBar() else sheetHeader(),
-                      const Expanded(child: Center(child: CircularProgressIndicator())),
-                    ],
-                  ),
-                  error: (e, _) => Center(child: Text('timeline error: $e')),
-                );
-              },
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('saved error: $e')),
-            );
+                  );
+                },
+                loading: () => Column(
+                  children: [
+                    if (showTopBar) topBar() else sheetHeader(),
+                    const Expanded(child: Center(child: CircularProgressIndicator())),
+                  ],
+                ),
+                error: (e, _) => Center(child: Text('timeline error: $e')),
+              );
+            },
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Center(child: Text('global push error: $e')),
+          );
+        },
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(child: Text('saved error: $e')),
+      );
           },
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (e, _) => Center(child: Text('library error: $e')),

@@ -5,6 +5,7 @@ import '../../../theme/app_tokens.dart';
 import '../../app_card.dart';
 
 import '../../../bubble_library/providers/providers.dart';
+import '../../../collections/wishlist_provider.dart';
 import '../user/me_prefs_store.dart';
 import '../user_learning_store.dart';
 
@@ -205,7 +206,7 @@ class _MeAchievementsSectionState extends ConsumerState<MeAchievementsSection> {
   AsyncValue<List<dynamic>> _safeWish() {
     try {
       ref.read(uidProvider);
-      return ref.watch(wishlistProvider);
+      return ref.watch(localWishlistProvider);
     } catch (_) {
       return const AsyncValue.data(<dynamic>[]);
     }

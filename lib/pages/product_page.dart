@@ -9,6 +9,7 @@ import '../widgets/rich_sections/user_learning_store.dart';
 import '../notifications/coming_soon_remind_store.dart';
 import '../bubble_library/notifications/notification_service.dart';
 import '../widgets/unlock_feature_bar.dart';
+import '../collections/wishlist_provider.dart';
 
 class ProductPage extends ConsumerStatefulWidget {
   final String productId;
@@ -31,8 +32,9 @@ class _ProductPageState extends ConsumerState<ProductPage> {
     final prod = ref.watch(productProvider(widget.productId));
     final previews = ref.watch(previewItemsProvider(widget.productId));
     final comingSoonSet = ref.watch(comingSoonIdsProvider);
-    final wishAsync = ref.watch(wishlistProvider);
     final tokens = context.tokens;
+
+    final localWishAsync = ref.watch(localWishlistProvider);
 
     return Scaffold(
       backgroundColor: tokens.bg,
@@ -40,6 +42,20 @@ class _ProductPageState extends ConsumerState<ProductPage> {
         title: const Text('產品'),
         backgroundColor: Colors.transparent,
         elevation: 0,
+        actions: [
+          localWishAsync.when(
+            data: (wish) {
+              final isWish = wish.any((e) => e.productId == widget.productId);
+              return IconButton(
+                tooltip: isWish ? '取消收藏' : '加入收藏',
+                icon: Icon(isWish ? Icons.bookmark : Icons.bookmark_outline),
+                onPressed: () => ref.read(localWishlistNotifierProvider).toggleCollect(widget.productId),
+              );
+            },
+            loading: () => const SizedBox.shrink(),
+            error: (_, __) => const SizedBox.shrink(),
+          ),
+        ],
       ),
       body: prod.when(
         data: (p) {
@@ -231,7 +247,7 @@ class _ProductPageState extends ConsumerState<ProductPage> {
               ),
               if (isComingSoon) ...[
                 const SizedBox(height: 12),
-                wishAsync.when(
+                localWishAsync.when(
                   data: (wish) {
                     String? uid;
                     try {
@@ -251,16 +267,15 @@ class _ProductPageState extends ConsumerState<ProductPage> {
                             onPressed: (uid == null)
                                 ? null
                                 : () async {
-                                    final repo = ref.read(libraryRepoProvider);
                                     if (isWish) {
-                                      await repo.removeWishlist(uid!, widget.productId);
+                                      await ref.read(localWishlistNotifierProvider).remove(widget.productId);
                                       if (context.mounted) {
                                         ScaffoldMessenger.of(context).showSnackBar(
                                           const SnackBar(content: Text('已從願望清單移除')),
                                         );
                                       }
                                     } else {
-                                      await repo.addWishlist(uid!, widget.productId);
+                                      await ref.read(localWishlistNotifierProvider).toggleCollect(widget.productId);
                                       if (context.mounted) {
                                         ScaffoldMessenger.of(context).showSnackBar(
                                           const SnackBar(content: Text('已加入願望清單')),
