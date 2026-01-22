@@ -57,7 +57,7 @@ class NotificationService {
         final cid = (data['contentItemId'] ?? '').toString();
         if (pid.isNotEmpty && cid.isNotEmpty) {
           await NotificationInboxStore.markOpened(
-            uid: uid,
+            uid,
             productId: pid,
             contentItemId: cid,
           );

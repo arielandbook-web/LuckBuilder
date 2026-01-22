@@ -6,6 +6,7 @@ import '../bubble_library/models/user_library.dart';
 import '../bubble_library/notifications/push_scheduler.dart';
 import '../bubble_library/providers/providers.dart';
 import 'skip_next_store.dart';
+import 'daily_routine_store.dart';
 
 /// 未來 3 天推播時間表（真資料）
 /// - 不會 schedule 通知（只計算）
@@ -50,6 +51,17 @@ final upcomingTimelineProvider = FutureProvider<List<PushTask>>((ref) async {
     contentByProduct[entry.key] = list.cast<ContentItem>();
   }
 
+  // ✅ 真排序：日常順序
+  final routine = await DailyRoutineStore.load(uid);
+  final productOrder = List<String>.from(routine.orderedProductIds);
+
+  // ✅ order index（timeline UI 同時間要照這個排）
+  final orderIdx = <String, int>{};
+  for (int i = 0; i < productOrder.length; i++) {
+    orderIdx[productOrder[i]] = i;
+  }
+  int idxOf(String pid) => orderIdx[pid] ?? (1 << 20);
+
   final tasks = PushScheduler.buildSchedule(
     now: DateTime.now(),
     days: 3,
@@ -58,18 +70,39 @@ final upcomingTimelineProvider = FutureProvider<List<PushTask>>((ref) async {
     contentByProduct: contentByProduct,
     savedMap: savedMap,
     iosSafeMaxScheduled: 60,
+    productOrder: productOrder,
   );
+
+  // ✅ scoped skip 一次載入（避免每筆 await）
+  final pids = tasks.map((t) => t.productId).toSet().toList();
+  final scopedPairs = await Future.wait(pids.map((pid) async {
+    final set = await SkipNextStore.loadForProduct(uid, pid);
+    return MapEntry(pid, set);
+  }));
+  final scopedMap = <String, Set<String>>{
+    for (final e in scopedPairs) e.key: e.value
+  };
 
   // ✅ UI 顯示也要排除 skip（全域 + 商品範圍）
   final filtered = <PushTask>[];
   for (final t in tasks) {
     if (globalSkip.contains(t.item.id)) continue;
-
-    final scoped = await SkipNextStore.loadForProduct(uid, t.productId);
+    final scoped = scopedMap[t.productId] ?? const <String>{};
     if (scoped.contains(t.item.id)) continue;
-
     filtered.add(t);
   }
-  filtered.sort((a, b) => a.when.compareTo(b.when));
+
+  // ✅ 真排序：when 相同也要照日常順序（不洗掉）
+  filtered.sort((a, b) {
+    final t = a.when.compareTo(b.when);
+    if (t != 0) return t;
+
+    final ao = idxOf(a.productId);
+    final bo = idxOf(b.productId);
+    if (ao != bo) return ao.compareTo(bo);
+
+    return a.productId.compareTo(b.productId);
+  });
+
   return filtered;
 });

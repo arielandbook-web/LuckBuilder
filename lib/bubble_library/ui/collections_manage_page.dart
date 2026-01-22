@@ -80,7 +80,7 @@ class CollectionsManagePage extends ConsumerWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               DropdownButtonFormField<int>(
-                value: freq,
+                initialValue: freq,
                 decoration: const InputDecoration(labelText: '每日幾則'),
                 items: const [1, 2, 3, 5, 8]
                     .map((e) =>
@@ -90,7 +90,7 @@ class CollectionsManagePage extends ConsumerWidget {
               ),
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
-                value: mode,
+                initialValue: mode,
                 decoration:
                     const InputDecoration(labelText: '模式（timeMode.name）'),
                 items: const ['fixed', 'smart', 'morning', 'evening']

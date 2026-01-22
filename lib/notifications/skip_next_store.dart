@@ -1,54 +1,66 @@
+import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class SkipNextStore {
-  static const _kPrefix = 'skip_next_v1_';
-
-  static String _key(String uid) => '$_kPrefix$uid';
+  static String _kGlobal(String uid) => 'skip_next_global_$uid';
+  static String _kScoped(String uid, String productId) =>
+      'skip_next_scoped_${uid}_$productId';
 
   static Future<Set<String>> load(String uid) async {
     final sp = await SharedPreferences.getInstance();
-    final list = sp.getStringList(_key(uid)) ?? const <String>[];
-    return list.toSet();
+    final raw = sp.getString(_kGlobal(uid));
+    if (raw == null || raw.isEmpty) return <String>{};
+    try {
+      final list = (jsonDecode(raw) as List).cast<String>();
+      return list.toSet();
+    } catch (_) {
+      return <String>{};
+    }
   }
 
+  static Future<Set<String>> loadForProduct(String uid, String productId) async {
+    final sp = await SharedPreferences.getInstance();
+    final raw = sp.getString(_kScoped(uid, productId));
+    if (raw == null || raw.isEmpty) return <String>{};
+    try {
+      final list = (jsonDecode(raw) as List).cast<String>();
+      return list.toSet();
+    } catch (_) {
+      return <String>{};
+    }
+  }
+
+  /// ✅ 加到「全域」skip（你 timeline 的 '跳過下一則' 可用這個）
   static Future<void> add(String uid, String contentItemId) async {
-    final sp = await SharedPreferences.getInstance();
-    final cur = (sp.getStringList(_key(uid)) ?? const <String>[]).toSet();
+    final cur = await load(uid);
     cur.add(contentItemId);
-    await sp.setStringList(_key(uid), cur.toList());
-  }
-
-  static Future<void> removeMany(String uid, Set<String> ids) async {
-    if (ids.isEmpty) return;
     final sp = await SharedPreferences.getInstance();
-    final cur = (sp.getStringList(_key(uid)) ?? const <String>[]).toSet();
-    cur.removeAll(ids);
-    await sp.setStringList(_key(uid), cur.toList());
+    await sp.setString(_kGlobal(uid), jsonEncode(cur.toList()));
   }
 
-  static Future<void> clear(String uid) async {
-    final sp = await SharedPreferences.getInstance();
-    await sp.remove(_key(uid));
-  }
-
-  // 新增：商品範圍的 skip key
-  static String _kProductScoped(String productId) => 'product::$productId';
-
-  static Future<void> addProductScoped(
+  /// ✅ 加到「scoped」skip（若你之後要做：只跳過某商品的下一則）
+  static Future<void> addForProduct(
       String uid, String productId, String contentItemId) async {
+    final cur = await loadForProduct(uid, productId);
+    cur.add(contentItemId);
     final sp = await SharedPreferences.getInstance();
-    final key = '${_kPrefix}${_kProductScoped(productId)}_$uid';
-    final list = (sp.getStringList(key) ?? const <String>[]).toSet();
-    list.add(contentItemId);
-    await sp.setStringList(key, list.toList());
+    await sp.setString(_kScoped(uid, productId), jsonEncode(cur.toList()));
   }
 
-  /// 讀取某商品的 skip set（不影響全域）
-  static Future<Set<String>> loadForProduct(
-      String uid, String productId) async {
+  /// ✅ reschedule 時消耗（全域）
+  static Future<void> removeMany(String uid, Set<String> ids) async {
+    final cur = await load(uid);
+    cur.removeAll(ids);
     final sp = await SharedPreferences.getInstance();
-    final key = '${_kPrefix}${_kProductScoped(productId)}_$uid';
-    final list = sp.getStringList(key) ?? const <String>[];
-    return list.toSet();
+    await sp.setString(_kGlobal(uid), jsonEncode(cur.toList()));
+  }
+
+  /// ✅ reschedule 時消耗（scoped）
+  static Future<void> removeManyForProduct(
+      String uid, String productId, Set<String> ids) async {
+    final cur = await loadForProduct(uid, productId);
+    cur.removeAll(ids);
+    final sp = await SharedPreferences.getInstance();
+    await sp.setString(_kScoped(uid, productId), jsonEncode(cur.toList()));
   }
 }

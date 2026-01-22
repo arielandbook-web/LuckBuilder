@@ -3,14 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/v2_providers.dart';
 import '../providers/nav_providers.dart';
+import '../providers/home_sections_provider.dart';
 import '../widgets/app_card.dart';
+import '../widgets/product_rail.dart';
 import '../theme/app_tokens.dart';
 import '../data/models.dart';
 import '../ui/rich_sections/home_today_task_section.dart';
 import '../ui/rich_sections/home_continue_section.dart';
 import '../ui/rich_sections/home_status_section.dart';
 import '../widgets/rich_sections/sections/home_for_you_section.dart';
-import '../widgets/rich_sections/sections/home_new_and_coming_section.dart';
 import '../widgets/rich_sections/user_learning_store.dart';
 import '../bubble_library/ui/product_library_page.dart';
 import 'product_page.dart';
@@ -23,9 +24,8 @@ class HomePage extends ConsumerWidget {
     final banners = ref.watch(bannerProductsProvider);
     final weekly = ref.watch(featuredProductsProvider('weekly_pick'));
     final hot = ref.watch(featuredProductsProvider('hot_all'));
-    final newArrivals = ref.watch(featuredProductsProvider('new_arrivals'));
-    final comingSoon = ref.watch(featuredProductsProvider('coming_soon'));
-    final autoNew = ref.watch(autoNewArrivalsProvider);
+    final newArrivals = ref.watch(HomeSectionsProvider.newArrivalsProvider);
+    final comingSoon = ref.watch(HomeSectionsProvider.comingSoonProvider);
     final tokens = context.tokens;
 
     return SafeArea(
@@ -76,36 +76,51 @@ class HomePage extends ConsumerWidget {
           const HomeStatusSection(),
           const SizedBox(height: 18),
 
-          // 本週新泡泡
-          const _Section(title: '本週新泡泡'),
-          if (autoNew.isNotEmpty)
-            _SmallRail(products: autoNew, badgeText: 'NEW')
-          else
-            newArrivals.when(
-              data: (ps) => ps.isEmpty
-                  ? AppCard(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Text(
-                          '尚無新上架（可建立 featured_lists/new_arrivals 或補 createdAtMs）',
-                          style: TextStyle(color: tokens.textSecondary),
-                        ),
-                      ),
-                    )
-                  : _SmallRail(products: ps, badgeText: 'NEW'),
-              loading: () => const SizedBox(
-                  height: 180, child: Center(child: CircularProgressIndicator())),
-              error: (err, stack) => AppCard(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text('$err',
-                      style: TextStyle(color: tokens.textSecondary)),
+          // ✅ 新上架
+          const _Section(title: '新上架'),
+          newArrivals.when(
+            data: (ps) => ps.isEmpty
+                ? AppCard(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                          '新上架: 無資料',
+                          style: TextStyle(color: tokens.textSecondary)),
+                    ),
+                  )
+                : ProductRail(
+                    products: ps,
+                    size: ProductRailSize.large,
+                    ctaText: '立即查看',
+                  ),
+            loading: () => const SizedBox(
+                height: 210, child: Center(child: CircularProgressIndicator())),
+            error: (err, stack) => AppCard(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('新上架錯誤:',
+                        style: TextStyle(
+                            color: tokens.textPrimary,
+                            fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 4),
+                    Text(
+                      '$err',
+                      style:
+                          TextStyle(color: tokens.textSecondary, fontSize: 12),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
               ),
             ),
+          ),
           const SizedBox(height: 18),
 
-          // 即將上架
+          // ✅ 即將上架
           const _Section(title: '即將上架'),
           comingSoon.when(
             data: (ps) => ps.isEmpty
@@ -113,15 +128,16 @@ class HomePage extends ConsumerWidget {
                     child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Text(
-                        '尚無即將上架（請建立 featured_lists/coming_soon）',
-                        style: TextStyle(color: tokens.textSecondary),
-                      ),
+                          '即將上架: 無資料',
+                          style: TextStyle(color: tokens.textSecondary)),
                     ),
                   )
-                : _SmallRail(
+                : ProductRail(
                     products: ps,
+                    size: ProductRailSize.small,
                     badgeText: 'SOON',
-                    isDim: true,
+                    dim: true,
+                    showReleaseDate: true,
                   ),
             loading: () => const SizedBox(
                 height: 180, child: Center(child: CircularProgressIndicator())),
@@ -136,10 +152,13 @@ class HomePage extends ConsumerWidget {
                             color: tokens.textPrimary,
                             fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
-                    Text('$err',
-                        style: TextStyle(color: tokens.textSecondary, fontSize: 12),
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis),
+                    Text(
+                      '$err',
+                      style:
+                          TextStyle(color: tokens.textSecondary, fontSize: 12),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ],
                 ),
               ),
@@ -149,10 +168,6 @@ class HomePage extends ConsumerWidget {
 
           // 為你推薦
           const HomeForYouSection(),
-          const SizedBox(height: 18),
-
-          // 本週新泡泡 + 即將上架
-          const HomeNewAndComingSection(),
           const SizedBox(height: 18),
 
           // Banner 1~3
@@ -219,7 +234,10 @@ class HomePage extends ConsumerWidget {
                           style: TextStyle(color: tokens.textSecondary)),
                     ),
                   )
-                : _Rail(products: ps),
+                : ProductRail(
+                    products: ps,
+                    size: ProductRailSize.large,
+                  ),
             loading: () => const SizedBox(
                 height: 210, child: Center(child: CircularProgressIndicator())),
             error: (err, stack) => AppCard(
@@ -257,7 +275,10 @@ class HomePage extends ConsumerWidget {
                           style: TextStyle(color: tokens.textSecondary)),
                     ),
                   )
-                : _Rail(products: ps),
+                : ProductRail(
+                    products: ps,
+                    size: ProductRailSize.large,
+                  ),
             loading: () => const SizedBox(
                 height: 210, child: Center(child: CircularProgressIndicator())),
             error: (err, stack) => AppCard(
@@ -428,241 +449,3 @@ class _BannerCard extends StatelessWidget {
   }
 }
 
-class _Rail extends StatelessWidget {
-  final List<Product> products;
-  final String ctaText;
-  const _Rail({required this.products, this.ctaText = '訂閱解鎖'});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 210,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: products.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
-        itemBuilder: (_, i) {
-          final p = products[i];
-          return AppCard(
-            padding: EdgeInsets.zero,
-            onTap: () {
-              unawaited(UserLearningStore().markGlobalLearnedToday());
-              Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => ProductPage(productId: p.id),
-              ));
-            },
-            child: SizedBox(
-              width: 280,
-              height: 210,
-              child: Builder(
-                builder: (context) {
-                  final tokens = context.tokens;
-                  return SizedBox(
-                    height: 210,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // 封面圖片
-                        if (p.coverImageUrl != null &&
-                            p.coverImageUrl!.isNotEmpty)
-                          ClipRRect(
-                            borderRadius: const BorderRadius.vertical(
-                                top: Radius.circular(20)),
-                            child: Image.network(
-                              p.coverImageUrl!,
-                              width: double.infinity,
-                              height: 120,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  Container(
-                                height: 120,
-                                color: tokens.chipBg,
-                                child: Icon(Icons.image_not_supported,
-                                    color: tokens.textSecondary),
-                              ),
-                            ),
-                          ),
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Flexible(
-                                  child: Text(p.title,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w800,
-                                          color: tokens.textPrimary)),
-                                ),
-                                const SizedBox(height: 4),
-                                Text('${p.topicId} · ${p.level}',
-                                    style:
-                                        TextStyle(color: tokens.textSecondary)),
-                                const SizedBox(height: 4),
-                                Align(
-                                  alignment: Alignment.bottomRight,
-                                  child: Text(ctaText,
-                                      style: TextStyle(
-                                          color: tokens.primary,
-                                          fontWeight: FontWeight.w600)),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _SmallRail extends StatelessWidget {
-  final List<Product> products;
-  final String badgeText;
-  final bool isDim;
-
-  const _SmallRail({
-    required this.products,
-    required this.badgeText,
-    this.isDim = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = context.tokens;
-
-    return SizedBox(
-      height: 180,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: products.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
-        itemBuilder: (_, i) {
-          final p = products[i];
-          final dt = p.releaseAt;
-          final badge = (dt == null) ? badgeText : '${dt.month}/${dt.day}';
-          return AppCard(
-            padding: EdgeInsets.zero,
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => ProductPage(productId: p.id)),
-            ),
-            child: SizedBox(
-              width: 220,
-              child: Stack(
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // image
-                      if (p.coverImageUrl != null && p.coverImageUrl!.isNotEmpty)
-                        ClipRRect(
-                          borderRadius:
-                              const BorderRadius.vertical(top: Radius.circular(20)),
-                          child: Image.network(
-                            p.coverImageUrl!,
-                            width: double.infinity,
-                            height: 105,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Container(
-                              height: 105,
-                              color: tokens.chipBg,
-                              child: Icon(Icons.image_not_supported,
-                                  color: tokens.textSecondary),
-                            ),
-                          ),
-                        )
-                      else
-                        Container(
-                          height: 105,
-                          color: tokens.chipBg,
-                          child: Icon(Icons.auto_awesome,
-                              color: tokens.textSecondary),
-                        ),
-
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                p.title,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w900,
-                                  color: tokens.textPrimary.withValues(
-                                      alpha: isDim ? 0.75 : 1.0),
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '${p.topicId} · ${p.level}',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: tokens.textSecondary.withValues(
-                                      alpha: isDim ? 0.65 : 1.0),
-                                ),
-                              ),
-                              if (isDim) ...[
-                                const SizedBox(height: 2),
-                                Text(
-                                  dt == null
-                                      ? '即將上架'
-                                      : '上架：${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: tokens.textSecondary.withValues(alpha: 0.7),
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  // badge
-                  Positioned(
-                    top: 10,
-                    left: 10,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(999),
-                        color: Colors.black.withValues(alpha: 0.35),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
-                      ),
-                      child: Text(
-                        badge,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}

@@ -157,8 +157,20 @@ class PushScheduler {
     required Map<String, List<ContentItem>> contentByProduct,
     required Map<String, SavedContent> savedMap,
     required int iosSafeMaxScheduled, // <= 60
+
+    // ✅ 新增：真排序用的「日常順序」(本機)
+    List<String>? productOrder,
   }) {
     if (!global.enabled) return [];
+
+    // ✅ 建立 order index map
+    final orderIdx = <String, int>{};
+    if (productOrder != null && productOrder.isNotEmpty) {
+      for (int i = 0; i < productOrder.length; i++) {
+        orderIdx[productOrder[i]] = i;
+      }
+    }
+    int idxOf(String pid) => orderIdx[pid] ?? 1 << 20; // 沒在日常裡的放後面
 
     final tasks = <PushTask>[];
     final startDate = DateTime(now.year, now.month, now.day);
@@ -216,13 +228,20 @@ class PushScheduler {
       dayCandidates.sort((a, b) => a.when.compareTo(b.when));
 
       if (dayCandidates.length > dailyCap) {
-        // 優先：商品最愛 + 最近開啟
+        // 優先：商品最愛 + 最近開啟 + 日常順序
         int prio(PushTask t) {
           final lp = libraryByProductId[t.productId]!;
           int score = 0;
-          if (lp.isFavorite) score += 1000;
-          if (lp.lastOpenedAt != null) score += 200;
+
+          // ✅ 日常順序越前分數越高（真排序核心）
+          final oi = idxOf(t.productId);
+          score += (1000000 - oi).clamp(0, 1000000);
+
+          // 你原本的權重保留
+          if (lp.isFavorite) score += 2000;
+          if (lp.lastOpenedAt != null) score += 300;
           score += lp.purchasedAt.millisecondsSinceEpoch ~/ 100000000;
+
           return score;
         }
 
@@ -241,7 +260,18 @@ class PushScheduler {
       }
     }
 
-    tasks.sort((a, b) => a.when.compareTo(b.when));
+    tasks.sort((a, b) {
+      final t = a.when.compareTo(b.when);
+      if (t != 0) return t;
+
+      // ✅ 同一時間：日常順序小的排前
+      final ao = idxOf(a.productId);
+      final bo = idxOf(b.productId);
+      if (ao != bo) return ao.compareTo(bo);
+
+      // ✅ 再穩定：productId
+      return a.productId.compareTo(b.productId);
+    });
     return tasks.take(iosSafeMaxScheduled).toList();
   }
 }

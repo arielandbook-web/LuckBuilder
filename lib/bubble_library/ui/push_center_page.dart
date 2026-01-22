@@ -2,21 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/global_push_settings.dart';
-import '../models/user_library.dart';
+import '../models/push_config.dart';
 import '../notifications/push_orchestrator.dart';
 import '../providers/providers.dart';
 import '../../notifications/dnd_settings.dart';
 import '../../notifications/push_timeline_provider.dart';
-import '../../notifications/skip_next_store.dart';
 import 'push_product_config_page.dart';
 import 'widgets/bubble_card.dart';
 import 'widgets/push_inbox_section.dart';
-import '../../../pages/push_inbox_page.dart';
+import 'widgets/push_smart_suggestions_section.dart';
+import 'widgets/push_smart_suggestions_card.dart';
+import '../../notifications/notification_inbox_page.dart';
 import '../../../pages/push_timeline_page.dart';
-import 'product_library_page.dart';
-import '../../notifications/widgets/timeline_widgets.dart';
 import '../../notifications/timeline_meta_mode.dart';
-import '../../notifications/widgets/push_hint.dart';
 import '../../notifications/push_timeline_list.dart';
 
 final dndFuture = FutureProvider.autoDispose<DndSettings>((ref) async {
@@ -32,9 +30,6 @@ class PushCenterPage extends ConsumerWidget {
     final globalAsync = ref.watch(globalPushSettingsProvider);
     final libAsync = ref.watch(libraryProductsProvider);
     final productsAsync = ref.watch(productsMapProvider);
-    final timelineAsync = ref.watch(upcomingTimelineProvider);
-    final savedAsync = ref.watch(savedItemsProvider);
-    final dndAsync = ref.watch(dndFuture);
 
     return Scaffold(
       appBar: AppBar(
@@ -44,7 +39,7 @@ class PushCenterPage extends ConsumerWidget {
             icon: const Icon(Icons.inbox_outlined),
             tooltip: '推播收件匣',
             onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const PushInboxPage()),
+              MaterialPageRoute(builder: (_) => const NotificationInboxPage(showMissedOnly: true)),
             ),
           ),
           IconButton(
@@ -73,162 +68,42 @@ class PushCenterPage extends ConsumerWidget {
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (e, _) => Text('global error: $e'),
           ),
+
+          // ✅ 智慧建議卡（本機推斷）
+          const PushSmartSuggestionsCard(),
           const SizedBox(height: 12),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              const Text('未來 3 天時間表',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
-              const SizedBox(width: 10),
-              Expanded(
-                child: dndAsync.when(
-                  data: (s) {
-                    if (!s.enabled) return const SizedBox.shrink();
-                    return Text(
-                      '已套用勿擾 ${fmtTimeMin(s.startMin)}–${fmtTimeMin(s.endMin)}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.7),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    );
-                  },
-                  loading: () => const SizedBox.shrink(),
-                  error: (_, __) => const SizedBox.shrink(),
-                ),
-              ),
-            ],
+
+          // ✅ 智慧建議卡（嵌入現有畫面）
+          const PushSmartSuggestionsSection(),
+
+          const SizedBox(height: 12),
+          // ✅ 推播收件匣入口
+          ListTile(
+            leading: const Icon(Icons.inbox_outlined),
+            title: const Text('推播收件匣（錯過推播）'),
+            subtitle: const Text('把你沒點到的推播集中起來補看'),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                  builder: (_) => const NotificationInboxPage(showMissedOnly: true)),
+            ),
           ),
-          const SizedBox(height: 10),
-          timelineAsync.when(
-            data: (list) {
-              if (list.isEmpty) {
-                return BubbleCard(
-                  child: Text('尚未產生 timeline（可按右上角刷新重排 3 天）',
-                      style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.8))),
-                );
-              }
 
-              // 排序（以 when）
-              final items = List.of(list);
-              items.sort((a, b) {
-                try {
-                  final wa = (a as dynamic).when as DateTime;
-                  final wb = (b as dynamic).when as DateTime;
-                  return wa.compareTo(wb);
-                } catch (_) {
-                  return 0;
-                }
-              });
-
-              // 找每個 product 的第一則（才顯示「跳過下一則」）
-              final firstIdxByProduct = <String, int>{};
-              for (int i = 0; i < items.length; i++) {
-                final t = items[i];
-                final pid = (t as dynamic).productId?.toString() ?? '';
-                if (pid.isEmpty) continue;
-                firstIdxByProduct.putIfAbsent(pid, () => i);
-              }
-
-              return productsAsync.when(
-                data: (productsMap) {
-                  return ListView.separated(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: items.length.clamp(0, 40),
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (_, i) {
-                      final t = items[i];
-                      final pid = (t as dynamic).productId?.toString() ?? '';
-                      final when = (t as dynamic).when as DateTime?;
-                      final cid = (t as dynamic).contentItemId?.toString() ??
-                          (t as dynamic).itemId?.toString() ??
-                          (t as dynamic).contentId?.toString() ??
-                          ((t as dynamic).item != null
-                              ? ((t as dynamic).item as dynamic).id?.toString()
-                              : '') ??
-                          '';
-
-                      final title = productsMap[pid]?.title ?? pid;
-                      final isFirst = firstIdxByProduct[pid] == i;
-
-                      return BubbleCard(
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Icon(Icons.schedule, size: 20),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(title,
-                                      style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w900)),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    when == null
-                                        ? '時間未知'
-                                        : '${when.year}-${when.month.toString().padLeft(2, '0')}-${when.day.toString().padLeft(2, '0')} '
-                                          '${when.hour.toString().padLeft(2, '0')}:${when.minute.toString().padLeft(2, '0')}',
-                                    style: TextStyle(
-                                        color: Colors.white.withValues(alpha: 0.75),
-                                        fontSize: 12),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (isFirst)
-                              TextButton(
-                                onPressed: (pid.isEmpty || cid.isEmpty)
-                                    ? null
-                                    : () async {
-                                        final uid = ref.read(uidProvider);
-                                        await SkipNextStore.add(uid, cid);
-
-                                        await PushOrchestrator.rescheduleNextDays(
-                                            ref: ref, days: 3);
-
-                                        ref.invalidate(upcomingTimelineProvider);
-
-                                        // ignore: use_build_context_synchronously
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          const SnackBar(
-                                              content:
-                                                  Text('已跳過下一則，並重排未來 3 天')),
-                                        );
-                                      },
-                                child: const Text('跳過下一則'),
-                              ),
-                          ],
-                        ),
-                      );
-                    },
-                  );
-                },
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, _) => Text('products error: $e'),
-              );
-            },
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Text('timeline error: $e'),
+          // ✅ 未來 3 天時間表入口
+          ListTile(
+            leading: const Icon(Icons.timeline),
+            title: const Text('未來 3 天時間表'),
+            subtitle: const Text('查看將收到哪些 Topic，可跳過下一則'),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const PushTimelinePage()),
+            ),
           ),
+
           const SizedBox(height: 12),
 
           // ✅ 未來 3 天時間表（嵌入式預覽）
           _timelinePreview(
             context: context,
             ref: ref,
-            timelineAsync: timelineAsync,
-            productsAsync: productsAsync,
-            savedAsync: savedAsync,
-            libAsync: libAsync,
           ),
 
           const SizedBox(height: 12),
@@ -354,6 +229,56 @@ class PushCenterPage extends ConsumerWidget {
               },
             ),
           ),
+          // ✅ 勿擾 / 靜音時段（全域）
+          ListTile(
+            title: const Text('勿擾時段（全域）'),
+            subtitle: Text(
+                '${_fmtTod(g.quietHours.start)} – ${_fmtTod(g.quietHours.end)}'),
+            trailing: const Icon(Icons.bedtime_outlined),
+            onTap: () async {
+              final start = await _pickTime(context, g.quietHours.start);
+              if (start == null) return;
+              final end = await _pickTime(context, g.quietHours.end);
+              if (end == null) return;
+
+              final next = g.copyWith(
+                quietHours: TimeRange(start, end),
+              );
+
+              await repo.setGlobal(uid, next);
+              await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
+
+              // ignore: use_build_context_synchronously
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                    content: Text(
+                        '已設定勿擾：${_fmtTod(start)} – ${_fmtTod(end)}')),
+              );
+            },
+          ),
+          // （可選）快速關閉勿擾
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              icon: const Icon(Icons.restore),
+              label: const Text('關閉勿擾'),
+              onPressed: () async {
+                final next = g.copyWith(
+                  quietHours: TimeRange(
+                    const TimeOfDay(hour: 0, minute: 0),
+                    const TimeOfDay(hour: 0, minute: 0),
+                  ),
+                );
+                await repo.setGlobal(uid, next);
+                await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
+
+                // ignore: use_build_context_synchronously
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('已關閉勿擾（00:00 – 00:00）')),
+                );
+              },
+            ),
+          ),
           const Divider(height: 24),
           FutureBuilder<DndSettings>(
             future: DndSettingsStore.load(uid),
@@ -453,10 +378,6 @@ class PushCenterPage extends ConsumerWidget {
   Widget _timelinePreview({
     required BuildContext context,
     required WidgetRef ref,
-    required AsyncValue timelineAsync,
-    required AsyncValue productsAsync,
-    required AsyncValue savedAsync,
-    required AsyncValue libAsync,
   }) {
     final metaMode = ref.watch(timelineMetaModeProvider);
 
@@ -467,21 +388,40 @@ class PushCenterPage extends ConsumerWidget {
           Row(
             children: [
               const Text('未來 3 天時間表',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
-              const Spacer(),
-              SegmentedButton<TimelineMetaMode>(
-                segments: const [
-                  ButtonSegment(value: TimelineMetaMode.day, label: Text('Day')),
-                  ButtonSegment(value: TimelineMetaMode.push, label: Text('推播')),
-                  ButtonSegment(value: TimelineMetaMode.nth, label: Text('第N')),
-                ],
-                selected: {metaMode},
-                onSelectionChanged: (s) =>
-                    ref.read(timelineMetaModeProvider.notifier).state = s.first,
-                showSelectedIcon: false,
-              ),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
               const SizedBox(width: 8),
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SegmentedButton<TimelineMetaMode>(
+                    segments: const [
+                      ButtonSegment(
+                        value: TimelineMetaMode.day,
+                        label: Text('Day', style: TextStyle(fontSize: 11)),
+                      ),
+                      ButtonSegment(
+                        value: TimelineMetaMode.push,
+                        label: Text('推播', style: TextStyle(fontSize: 11)),
+                      ),
+                      ButtonSegment(
+                        value: TimelineMetaMode.nth,
+                        label: Text('第N', style: TextStyle(fontSize: 11)),
+                      ),
+                    ],
+                    selected: {metaMode},
+                    onSelectionChanged: (s) =>
+                        ref.read(timelineMetaModeProvider.notifier).state = s.first,
+                    showSelectedIcon: false,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
               TextButton(
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
                 onPressed: () {
                   showModalBottomSheet(
                     context: context,
@@ -509,161 +449,43 @@ class PushCenterPage extends ConsumerWidget {
                     },
                   );
                 },
-                child: const Text('查看全部'),
+                child: const Text('查看全部', style: TextStyle(fontSize: 12)),
               ),
             ],
           ),
           const SizedBox(height: 8),
-
-          productsAsync.when(
-            data: (productsMap) {
-              return libAsync.when(
-                data: (lib) {
-                  final libMap = <String, UserLibraryProduct>{};
-                  for (final lp in lib) {
-                    libMap[lp.productId] = lp;
-                  }
-
-                  return savedAsync.when(
-                    data: (savedMap) {
-                      return timelineAsync.when(
-                    data: (items) {
-                      if (items.isEmpty) {
-                        return Text('目前沒有已排程的推播',
-                            style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.75)));
-                      }
-
-                      // ✅ 預覽前 6 筆
-                      final preview = items.take(6).toList();
-
-                      // ✅ 分日 + 同日同商品第 N 則
-                      final groups = <String, List<dynamic>>{};
-                      for (final it in preview) {
-                        final when = (it as dynamic).when as DateTime;
-                        final dk = tlDayKey(when);
-                        (groups[dk] ??= []).add(it);
-                      }
-
-                      final dayKeys = groups.keys.toList()..sort();
-
-                      final rows = <TLRow>[];
-                      for (final dk in dayKeys) {
-                        rows.add(TLRow.header(dk));
-
-                        final list = groups[dk]!
-                          ..sort((a, b) {
-                            final wa = (a as dynamic).when as DateTime;
-                            final wb = (b as dynamic).when as DateTime;
-                            return wa.compareTo(wb);
-                          });
-
-                        final cntByProduct = <String, int>{};
-                        for (final t in list) {
-                          final pid = (t as dynamic).productId as String;
-                          final n = (cntByProduct[pid] ?? 0) + 1;
-                          cntByProduct[pid] = n;
-                          rows.add(TLRow.item(t, seqInDayForProduct: n));
-                        }
-                      }
-
-                      return Column(
-                        children: [
-                          ...List.generate(rows.length, (index) {
-                            final r = rows[index];
-
-                            if (r.isHeader) {
-                              return Padding(
-                                padding: const EdgeInsets.only(top: 6, bottom: 8),
-                                child: Text(
-                                  r.dayKey!,
-                                  style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.75),
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              );
-                            }
-
-                            final it = r.item!;
-                            final when = (it as dynamic).when as DateTime;
-                            final productId = (it as dynamic).productId as String;
-                            final item = (it as dynamic).item;
-                            final contentItemId = (item as dynamic).id as String;
-                            final previewText = (item as dynamic).content as String?;
-
-                            final productTitle =
-                                productsMap[productId]?.title ?? productId;
-
-                            final day = (item as dynamic).pushOrder as int?;
-                            final saved = savedMap[contentItemId];
-
-                            // ✅ 當日第一/最後：用 rows 判斷（header 分隔）
-                            final isFirstItemOfDay =
-                                index > 0 && rows[index - 1].isHeader;
-                            final isLastItemOfDay =
-                                (index + 1 >= rows.length) || rows[index + 1].isHeader;
-
-                            final metaMode = ref.watch(timelineMetaModeProvider);
-                            final lp = libMap[productId];
-
-                            String metaText() {
-                              switch (metaMode) {
-                                case TimelineMetaMode.day:
-                                  return day != null ? 'Day $day' : '';
-                                case TimelineMetaMode.push:
-                                  return lp != null ? pushHintFor(lp) : '';
-                                case TimelineMetaMode.nth:
-                                  return r.seqInDayForProduct != null
-                                      ? '第 ${r.seqInDayForProduct} 則'
-                                      : '';
-                              }
-                            }
-
-                            return tlTimelineRow(
-                              context: context,
-                              when: when,
-                              title: productTitle,
-                              preview: previewText ?? '',
-                              metaText: metaText(),
-                              saved: saved,
-                              seqInDay: r.seqInDayForProduct,
-                              isFirst: isFirstItemOfDay,
-                              isLast: isLastItemOfDay,
-                              onTap: () {
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => ProductLibraryPage(
-                                      productId: productId,
-                                      isWishlistPreview: false,
-                                      initialContentItemId: contentItemId,
-                                    ),
-                                  ),
-                                );
-                              },
-                            );
-                          }),
-                        ],
-                      );
-                      },
-                      loading: () =>
-                          const Center(child: CircularProgressIndicator()),
-                      error: (e, _) => Text('timeline error: $e'),
-                    );
-                  },
-                  loading: () => const Center(child: CircularProgressIndicator()),
-                  error: (e, _) => Text('saved error: $e'),
-                );
-              },
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Text('library error: $e'),
-            );
-          },
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Text('products error: $e'),
-        ),
+          SizedBox(
+            height: 400, // 限制預覽高度
+            child: PushTimelineList(
+              showTopBar: false,
+              limit: 6,
+              dense: true,
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  String _fmtTod(TimeOfDay t) {
+    final hh = t.hour.toString().padLeft(2, '0');
+    final mm = t.minute.toString().padLeft(2, '0');
+    return '$hh:$mm';
+  }
+
+  Future<TimeOfDay?> _pickTime(BuildContext context, TimeOfDay initial) {
+    return showTimePicker(
+      context: context,
+      initialTime: initial,
+      builder: (context, child) {
+        // 讓顏色不要太突兀（可留可不留）
+        return Theme(
+          data: Theme.of(context).copyWith(
+            dialogBackgroundColor: Theme.of(context).colorScheme.surface,
+          ),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
     );
   }
 }

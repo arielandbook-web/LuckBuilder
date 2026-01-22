@@ -1,19 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../notifications/scheduled_push_cache.dart';
-import '../../../notifications/push_inbox_store.dart';
+import '../../../notifications/notification_inbox_store.dart';
 import '../product_library_page.dart';
 import 'bubble_card.dart';
+import '../../providers/providers.dart';
 
-class PushInboxSection extends StatefulWidget {
+class PushInboxSection extends ConsumerStatefulWidget {
   const PushInboxSection({super.key});
 
   @override
-  State<PushInboxSection> createState() => _PushInboxSectionState();
+  ConsumerState<PushInboxSection> createState() => _PushInboxSectionState();
 }
 
-class _PushInboxSectionState extends State<PushInboxSection> {
+class _PushInboxSectionState extends ConsumerState<PushInboxSection> {
   final _cache = ScheduledPushCache();
-  final _store = PushInboxStore();
 
   bool _loading = true;
   List<ScheduledPushEntry> _missed = const [];
@@ -36,38 +37,66 @@ class _PushInboxSectionState extends State<PushInboxSection> {
   Future<void> _loadMissed() async {
     setState(() => _loading = true);
 
-    // 讀最近 3 天排程（你本來就只排 3 天，這裡一致）
-    final upcoming =
-        await _cache.loadSortedUpcoming(horizon: const Duration(days: 3));
+    try {
+      final uid = ref.read(uidProvider);
+      
+      // 讀最近 3 天排程（你本來就只排 3 天，這裡一致）
+      final upcoming =
+          await _cache.loadSortedUpcoming(horizon: const Duration(days: 3));
 
-    final now = DateTime.now();
-    final past = upcoming.where((e) => e.when.isBefore(now)).toList();
+      final now = DateTime.now();
+      final past = upcoming.where((e) => e.when.isBefore(now)).toList();
 
-    // 過濾尚未 opened 的
-    final missed = <ScheduledPushEntry>[];
-    for (final e in past) {
-      final cid = e.payload['contentItemId']?.toString();
-      if (cid == null || cid.isEmpty) continue;
-      final opened = await _store.isOpened(cid);
-      if (!opened) missed.add(e);
+      // 過濾尚未 opened 的（使用 NotificationInboxStore）
+      final missed = <ScheduledPushEntry>[];
+      final inboxItems = await NotificationInboxStore.load(uid);
+      final openedContentIds = inboxItems
+          .where((item) => item.status == InboxStatus.opened)
+          .map((item) => item.contentItemId)
+          .toSet();
+      
+      for (final e in past) {
+        final cid = e.payload['contentItemId']?.toString();
+        if (cid == null || cid.isEmpty) continue;
+        if (!openedContentIds.contains(cid)) {
+          missed.add(e);
+        }
+      }
+
+      missed.sort((a, b) => b.when.compareTo(a.when)); // 最近錯過的在最上面
+
+      if (!mounted) return;
+      setState(() {
+        _missed = missed;
+        _loading = false;
+      });
+    } catch (e) {
+      // 如果未登入或其他錯誤，顯示空列表
+      if (!mounted) return;
+      setState(() {
+        _missed = [];
+        _loading = false;
+      });
     }
-
-    missed.sort((a, b) => b.when.compareTo(a.when)); // 最近錯過的在最上面
-
-    if (!mounted) return;
-    setState(() {
-      _missed = missed;
-      _loading = false;
-    });
   }
 
   Future<void> _openAndMark(ScheduledPushEntry e) async {
-    final productId = e.payload['productId']?.toString();
-    final contentItemId = e.payload['contentItemId']?.toString();
+    final productId = e.payload['productId']?.toString() ?? '';
+    final contentItemId = e.payload['contentItemId']?.toString() ?? '';
 
-    if (productId == null || productId.isEmpty) return;
-    if (contentItemId != null && contentItemId.isNotEmpty) {
-      await _store.markOpened(contentItemId);
+    if (productId.isEmpty) return;
+    
+    try {
+      final uid = ref.read(uidProvider);
+      if (productId.isNotEmpty && contentItemId.isNotEmpty) {
+        await NotificationInboxStore.markOpened(
+          uid,
+          productId: productId,
+          contentItemId: contentItemId,
+        );
+      }
+    } catch (e) {
+      // 如果未登入，繼續執行但不標記為已開啟
     }
 
     if (!mounted) return;

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../bubble_library/providers/providers.dart';
 import '../bubble_library/notifications/push_orchestrator.dart';
+import '../bubble_library/notifications/push_scheduler.dart';
 import '../notifications/skip_next_store.dart';
 import '../notifications/push_timeline_provider.dart';
 import '../bubble_library/ui/product_library_page.dart';
@@ -14,11 +15,15 @@ import 'widgets/push_hint.dart';
 class PushTimelineList extends ConsumerWidget {
   final bool showTopBar; // Sheet 用 false, Page 用 true
   final VoidCallback? onClose;
+  final int? limit; // 限制顯示數量（null = 全部）
+  final bool dense; // 緊湊模式（用於預覽）
 
   const PushTimelineList({
     super.key,
     this.showTopBar = false,
     this.onClose,
+    this.limit,
+    this.dense = false,
   });
 
   @override
@@ -44,21 +49,38 @@ class PushTimelineList extends ConsumerWidget {
         child: Row(
           children: [
             const Text('未來 3 天時間表',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
-            const Spacer(),
-            SegmentedButton<TimelineMetaMode>(
-              segments: const [
-                ButtonSegment(value: TimelineMetaMode.day, label: Text('Day')),
-                ButtonSegment(value: TimelineMetaMode.push, label: Text('推播')),
-                ButtonSegment(value: TimelineMetaMode.nth, label: Text('第N')),
-              ],
-              selected: {metaMode},
-              onSelectionChanged: (s) =>
-                  ref.read(timelineMetaModeProvider.notifier).state = s.first,
-              showSelectedIcon: false,
-            ),
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
             const SizedBox(width: 8),
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SegmentedButton<TimelineMetaMode>(
+                  segments: const [
+                    ButtonSegment(
+                      value: TimelineMetaMode.day,
+                      label: Text('Day', style: TextStyle(fontSize: 11)),
+                    ),
+                    ButtonSegment(
+                      value: TimelineMetaMode.push,
+                      label: Text('推播', style: TextStyle(fontSize: 11)),
+                    ),
+                    ButtonSegment(
+                      value: TimelineMetaMode.nth,
+                      label: Text('第N', style: TextStyle(fontSize: 11)),
+                    ),
+                  ],
+                  selected: {metaMode},
+                  onSelectionChanged: (s) =>
+                      ref.read(timelineMetaModeProvider.notifier).state = s.first,
+                  showSelectedIcon: false,
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
             IconButton(
+              iconSize: 20,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
               tooltip: '重排未來 3 天',
               icon: const Icon(Icons.refresh),
               onPressed: () async {
@@ -76,7 +98,6 @@ class PushTimelineList extends ConsumerWidget {
       );
     }
 
-    // Sheet 用的 header（有把手 + 關閉）
     Widget sheetHeader() {
       if (showTopBar) return const SizedBox.shrink();
       return Padding(
@@ -95,23 +116,39 @@ class PushTimelineList extends ConsumerWidget {
             Row(
               children: [
                 const Text('未來 3 天時間表',
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
-                const Spacer(),
-                SegmentedButton<TimelineMetaMode>(
-                  segments: const [
-                    ButtonSegment(value: TimelineMetaMode.day, label: Text('Day')),
-                    ButtonSegment(value: TimelineMetaMode.push, label: Text('推播')),
-                    ButtonSegment(value: TimelineMetaMode.nth, label: Text('第N')),
-                  ],
-                  selected: {metaMode},
-                  onSelectionChanged: (s) => ref
-                      .read(timelineMetaModeProvider.notifier)
-                      .state = s.first,
-                  showSelectedIcon: false,
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SegmentedButton<TimelineMetaMode>(
+                      segments: const [
+                        ButtonSegment(
+                          value: TimelineMetaMode.day,
+                          label: Text('Day', style: TextStyle(fontSize: 11)),
+                        ),
+                        ButtonSegment(
+                          value: TimelineMetaMode.push,
+                          label: Text('推播', style: TextStyle(fontSize: 11)),
+                        ),
+                        ButtonSegment(
+                          value: TimelineMetaMode.nth,
+                          label: Text('第N', style: TextStyle(fontSize: 11)),
+                        ),
+                      ],
+                      selected: {metaMode},
+                      onSelectionChanged: (s) => ref
+                          .read(timelineMetaModeProvider.notifier)
+                          .state = s.first,
+                      showSelectedIcon: false,
+                    ),
+                  ),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 4),
                 IconButton(
+                  iconSize: 20,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
                   tooltip: '重排',
                   icon: const Icon(Icons.refresh),
                   onPressed: () async {
@@ -125,6 +162,9 @@ class PushTimelineList extends ConsumerWidget {
                   },
                 ),
                 IconButton(
+                  iconSize: 20,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
                   tooltip: '關閉',
                   icon: const Icon(Icons.close),
                   onPressed: onClose ?? () => Navigator.of(context).pop(),
@@ -160,10 +200,15 @@ class PushTimelineList extends ConsumerWidget {
 
                     // build rows (header + items)
                     final rows = <TLRow>[];
-                    final grouped = <String, List<dynamic>>{};
-                    for (final t in items) {
-                      final when = (t as dynamic).when as DateTime;
-                      final dk = tlDayKey(when);
+                    final grouped = <String, List<PushTask>>{};
+                    
+                    // 如果有限制，先限制 items
+                    final itemsToProcess = limit != null && limit! > 0
+                        ? items.take(limit!).toList()
+                        : items;
+                    
+                    for (final t in itemsToProcess) {
+                      final dk = tlDayKey(t.when);
                       grouped.putIfAbsent(dk, () => []).add(t);
                     }
 
@@ -172,17 +217,14 @@ class PushTimelineList extends ConsumerWidget {
                       rows.add(TLRow.header(dk));
 
                       final list = grouped[dk]!..sort((a, b) {
-                        final wa = (a as dynamic).when as DateTime;
-                        final wb = (b as dynamic).when as DateTime;
-                        return wa.compareTo(wb);
+                        return a.when.compareTo(b.when);
                       });
 
                       // 計算同日同商品的第N則
                       final perProdCounter = <String, int>{};
                       for (final t in list) {
-                        final pid = (t as dynamic).productId as String;
-                        final n = (perProdCounter[pid] ?? 0) + 1;
-                        perProdCounter[pid] = n;
+                        final n = (perProdCounter[t.productId] ?? 0) + 1;
+                        perProdCounter[t.productId] = n;
                         rows.add(TLRow.item(t, seqInDayForProduct: n));
                       }
                     }
@@ -197,25 +239,41 @@ class PushTimelineList extends ConsumerWidget {
                             itemBuilder: (context, i) {
                               final r = rows[i];
                               if (r.isHeader) {
-                                return Padding(
-                                  padding: const EdgeInsets.fromLTRB(0, 14, 0, 8),
-                                  child: Text(
-                                    r.dayKey!,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w900,
-                                      color: Colors.white.withValues(alpha: 0.85),
+                                if (dense) {
+                                  return Padding(
+                                    padding: const EdgeInsets.fromLTRB(0, 6, 0, 8),
+                                    child: Text(
+                                      r.dayKey ?? '',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        color: Colors.white.withValues(alpha: 0.75),
+                                        fontSize: 12,
+                                      ),
                                     ),
-                                  ),
-                                );
+                                  );
+                                } else {
+                                  return Padding(
+                                    padding: const EdgeInsets.fromLTRB(0, 14, 0, 8),
+                                    child: Text(
+                                      r.dayKey ?? '',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        color: Colors.white.withValues(alpha: 0.85),
+                                      ),
+                                    ),
+                                  );
+                                }
                               }
 
-                              final t = r.item!;
-                              final when = (t as dynamic).when as DateTime;
-                              final productId = (t as dynamic).productId as String;
-                              final item = (t as dynamic).item;
-                              final contentItemId = (item as dynamic).id as String;
-                              final preview = (item as dynamic).content as String? ?? '';
-                              final day = (item as dynamic).pushOrder as int?;
+                              if (r.item == null) {
+                                return const SizedBox.shrink();
+                              }
+                              final task = r.item as PushTask;
+                              final when = task.when;
+                              final productId = task.productId;
+                              final contentItemId = task.item.id;
+                              final preview = task.item.content;
+                              final day = task.item.pushOrder;
 
                               final productTitle = productsMap[productId]?.title ?? productId;
                               final lp = libMap[productId];
@@ -223,7 +281,7 @@ class PushTimelineList extends ConsumerWidget {
                               String metaText() {
                                 switch (metaMode) {
                                   case TimelineMetaMode.day:
-                                    return day != null ? 'Day $day' : '';
+                                    return day > 0 ? 'Day $day' : '';
                                   case TimelineMetaMode.push:
                                     return lp != null ? pushHintFor(lp) : '';
                                   case TimelineMetaMode.nth:
@@ -261,41 +319,56 @@ class PushTimelineList extends ConsumerWidget {
                                     ),
                                   );
                                 },
-                                trailing: Row(
-                                  children: [
-                                    OutlinedButton.icon(
-                                      icon: const Icon(Icons.visibility),
-                                      label: const Text('補看'),
-                                      onPressed: () {
-                                        Navigator.of(context).push(
-                                          MaterialPageRoute(
-                                            builder: (_) => ProductLibraryPage(
-                                              productId: productId,
-                                              isWishlistPreview: false,
-                                              initialContentItemId: contentItemId,
+                                trailing: dense
+                                    ? null // 緊湊模式不顯示 trailing
+                                    : Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        children: [
+                                          OutlinedButton.icon(
+                                            icon: const Icon(Icons.visibility, size: 16),
+                                            label: const Text('補看'),
+                                            style: OutlinedButton.styleFrom(
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 12,
+                                                vertical: 8,
+                                              ),
                                             ),
+                                            onPressed: () {
+                                              Navigator.of(context).push(
+                                                MaterialPageRoute(
+                                                  builder: (_) => ProductLibraryPage(
+                                                    productId: productId,
+                                                    isWishlistPreview: false,
+                                                    initialContentItemId: contentItemId,
+                                                  ),
+                                                ),
+                                              );
+                                            },
                                           ),
-                                        );
-                                      },
-                                    ),
-                                    const SizedBox(width: 10),
-                                    ElevatedButton.icon(
-                                      icon: const Icon(Icons.skip_next),
-                                      label: const Text('跳過下一則'),
-                                      onPressed: () async {
-                                        await SkipNextStore.add(uid, contentItemId);
-                                        await PushOrchestrator.rescheduleNextDays(
-                                            ref: ref, days: 3);
-                                        ref.invalidate(upcomingTimelineProvider);
-                                        if (context.mounted) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            const SnackBar(content: Text('已跳過下一則並重排')),
-                                          );
-                                        }
-                                      },
-                                    ),
-                                  ],
-                                ),
+                                          ElevatedButton.icon(
+                                            icon: const Icon(Icons.skip_next, size: 16),
+                                            label: const Text('跳過'),
+                                            style: ElevatedButton.styleFrom(
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 12,
+                                                vertical: 8,
+                                              ),
+                                            ),
+                                            onPressed: () async {
+                                              await SkipNextStore.add(uid, contentItemId);
+                                              await PushOrchestrator.rescheduleNextDays(
+                                                  ref: ref, days: 3);
+                                              ref.invalidate(upcomingTimelineProvider);
+                                              if (context.mounted) {
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  const SnackBar(content: Text('已跳過下一則並重排')),
+                                                );
+                                              }
+                                            },
+                                          ),
+                                        ],
+                                      ),
                               );
                             },
                           ),
