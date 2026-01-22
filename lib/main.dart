@@ -10,6 +10,7 @@ import 'bubble_library/bootstrapper.dart';
 import 'theme/theme_controller.dart';
 import 'theme/app_themes.dart';
 import 'navigation/app_nav.dart';
+import 'pages/welcome/bubble_welcome_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -54,7 +55,15 @@ class MyApp extends StatelessWidget {
             title: 'Learning Bubble',
             debugShowCheckedModeBanner: false,
             theme: AppThemes.byId(themeController.id),
-            home: MainScaffold4Tabs(themeController: themeController),
+            home: BubbleWelcomePage(
+              onFinished: () {
+                rootNavKey.currentState?.pushReplacement(
+                  MaterialPageRoute(
+                    builder: (_) => MainScaffold4Tabs(themeController: themeController),
+                  ),
+                );
+              },
+            ),
           );
         },
       ),

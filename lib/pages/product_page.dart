@@ -8,6 +8,7 @@ import '../theme/app_tokens.dart';
 import '../widgets/rich_sections/user_learning_store.dart';
 import '../notifications/coming_soon_remind_store.dart';
 import '../bubble_library/notifications/notification_service.dart';
+import '../widgets/unlock_feature_bar.dart';
 
 class ProductPage extends ConsumerStatefulWidget {
   final String productId;
@@ -200,39 +201,32 @@ class _ProductPageState extends ConsumerState<ProductPage> {
                 error: (_, __) => const SizedBox(height: 160),
               ),
               const SizedBox(height: 22),
-              GlassCard(
-                radius: 22,
-                child: Container(
-                  decoration: BoxDecoration(
-                    gradient: tokens.buttonGradient,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.only(left: 16),
-                          child: Text(
-                            isComingSoon ? '即將上架' : '訂閱解鎖全站',
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white),
-                          ),
-                        ),
-                      ),
-                      ElevatedButton(
-                        onPressed: isComingSoon ? null : () {},
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white.withValues(alpha: 0.2),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                        ),
-                        child: Text(isComingSoon ? '即將上架' : '立即訂閱'),
-                      ),
-                    ],
-                  ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(0, 12, 0, 24),
+                child: UnlockProductBar(
+                  productId: widget.productId,
+                  priceText: r'NT$79',
+                  onUnlocked: () async {
+                    // ✅ 購買成功後：將產品加入已購買清單
+                    String? uid;
+                    try {
+                      uid = ref.read(uidProvider);
+                    } catch (_) {
+                      uid = null;
+                    }
+                    if (uid != null) {
+                      final repo = ref.read(libraryRepoProvider);
+                      await repo.ensureLibraryProductExists(
+                        uid: uid,
+                        productId: widget.productId,
+                      );
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('已解鎖，可啟用橫幅推播')),
+                        );
+                      }
+                    }
+                  },
                 ),
               ),
               if (isComingSoon) ...[
