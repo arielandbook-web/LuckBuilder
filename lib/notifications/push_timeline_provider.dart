@@ -5,6 +5,7 @@ import '../bubble_library/models/global_push_settings.dart';
 import '../bubble_library/models/user_library.dart';
 import '../bubble_library/notifications/push_scheduler.dart';
 import '../bubble_library/providers/providers.dart';
+import '../bubble_library/notifications/scheduled_push_cache.dart';
 import 'skip_next_store.dart';
 import 'daily_routine_store.dart';
 
@@ -105,4 +106,11 @@ final upcomingTimelineProvider = FutureProvider<List<PushTask>>((ref) async {
   });
 
   return filtered;
+});
+
+/// 讀取本機快取的未來 3 天推播排程（公開 provider，供泡泡庫等 UI 使用；重排後需 invalidate）
+final scheduledCacheProvider =
+    FutureProvider<List<ScheduledPushEntry>>((ref) async {
+  return ScheduledPushCache()
+      .loadSortedUpcoming(horizon: const Duration(days: 3));
 });

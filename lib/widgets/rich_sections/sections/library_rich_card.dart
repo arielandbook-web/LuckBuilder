@@ -102,32 +102,6 @@ class LibraryRichCard extends StatelessWidget {
                 const SizedBox(height: 6),
                 _InfoRow(icon: Icons.notes, text: latestTitle),
 
-                const SizedBox(height: 12),
-
-                // 快速操作列
-                Row(
-                  children: [
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: onLearnNow,
-                        child: const Text('立即學 1 則'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: onMakeUpToday,
-                        child: const Text('補學今天'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      onPressed: onPreview3Days,
-                      icon: const Icon(Icons.calendar_month),
-                      tooltip: '預覽未來 3 天',
-                    ),
-                  ],
-                ),
               ],
             ),
           ),

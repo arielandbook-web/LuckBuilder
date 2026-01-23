@@ -209,11 +209,13 @@ class PushScheduler {
             List<ContentItem>.from(contentByProduct[lp.productId] ?? const [])
               ..sort((a, b) => a.seq.compareTo(b.seq));
 
+        // ✅ 階段 10：推播改為優先待學習（preferUnlearned）
+        // 一律使用 preferUnlearned，不再依各產品 contentMode
         final picked = _pickItem(
           itemsSorted: items,
           progress: lp.progress,
           savedMap: savedMap,
-          mode: lp.pushConfig.contentMode,
+          mode: PushContentMode.preferUnlearned,
         );
         if (picked == null) continue;
 

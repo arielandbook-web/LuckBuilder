@@ -14,6 +14,7 @@ import '../../notifications/skip_next_store.dart';
 import '../../notifications/notification_inbox_store.dart';
 // ✅ 新增：排程快取同步
 import 'scheduled_push_cache.dart';
+import '../../notifications/push_timeline_provider.dart';
 
 class PushOrchestrator {
   static Map<String, dynamic>? decodePayload(String? payload) {
@@ -236,5 +237,7 @@ class PushOrchestrator {
     for (final entry in consumedScoped.entries) {
       await SkipNextStore.removeManyForProduct(uid, entry.key, entry.value);
     }
+
+    ref.invalidate(scheduledCacheProvider);
   }
 }
