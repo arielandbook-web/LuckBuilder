@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/global_push_settings.dart';
+import '../models/push_config.dart';
 import '../models/user_library.dart';
 import '../providers/providers.dart';
 import 'notification_service.dart';
@@ -15,6 +16,21 @@ import '../../notifications/notification_inbox_store.dart';
 // ✅ 新增：排程快取同步
 import 'scheduled_push_cache.dart';
 import '../../notifications/push_timeline_provider.dart';
+
+/// 重排結果，供 UI 顯示超過每日上限等提示
+class RescheduleResult {
+  final bool overCap;
+  final int totalEffectiveFreq;
+  final int dailyCap;
+  final int scheduledCount;
+
+  const RescheduleResult({
+    required this.overCap,
+    required this.totalEffectiveFreq,
+    required this.dailyCap,
+    required this.scheduledCount,
+  });
+}
 
 class PushOrchestrator {
   static Map<String, dynamic>? decodePayload(String? payload) {
@@ -32,7 +48,7 @@ class PushOrchestrator {
   /// - Skip next：本機 skip contentItemId（只在 reschedule 時消耗）
   /// 
   /// [overrideGlobal] 可選：如果提供，會優先使用此設定（用於立即更新時避免讀到舊值）
-  static Future<void> rescheduleNextDays({
+  static Future<RescheduleResult> rescheduleNextDays({
     required WidgetRef ref,
     int days = 3,
     GlobalPushSettings? overrideGlobal,
@@ -94,16 +110,21 @@ class PushOrchestrator {
       debugPrint('  - global.quietHours: ${global.quietHours.start.hour}:${global.quietHours.start.minute} - ${global.quietHours.end.hour}:${global.quietHours.end.minute}');
       debugPrint('  - libMap 產品數量: ${libMap.length}');
       
-      final pushingProducts = libMap.values.where((p) => p.pushEnabled && !p.isHidden).toList();
-      debugPrint('  - 推播中的產品: ${pushingProducts.length}');
-      for (final p in pushingProducts) {
+      final pushingForLog = libMap.values.where((p) => p.pushEnabled && !p.isHidden).toList();
+      debugPrint('  - 推播中的產品: ${pushingForLog.length}');
+      for (final p in pushingForLog) {
         final cfg = p.pushConfig;
         debugPrint('    • ${p.productId}:');
         debugPrint('      - pushEnabled: ${p.pushEnabled}, hidden: ${p.isHidden}');
         debugPrint('      - freq: ${cfg.freqPerDay}, timeMode: ${cfg.timeMode.name}');
         debugPrint('      - presetSlots: ${cfg.presetSlots}');
+        if (cfg.timeMode == PushTimeMode.custom) {
+          final customTimesStr = cfg.customTimes
+              .map((t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}')
+              .join(', ');
+          debugPrint('      - customTimes: [$customTimesStr]');
+        }
         debugPrint('      - daysOfWeek: ${cfg.daysOfWeek}');
-        debugPrint('      - quietHours: ${cfg.quietHours.start.hour}:${cfg.quietHours.start.minute} - ${cfg.quietHours.end.hour}:${cfg.quietHours.end.minute}');
       }
       
       debugPrint('  - contentByProduct 數量: ${contentByProduct.length}');
@@ -111,6 +132,12 @@ class PushOrchestrator {
         debugPrint('    • ${entry.key}: ${entry.value.length} 個內容項目');
       }
     }
+
+    // ✅ 有效頻率：推播中產品的 freqPerDay 總和
+    final pushingProducts = libMap.values.where((p) => p.pushEnabled && !p.isHidden).toList();
+    final totalEffectiveFreq = pushingProducts.fold<int>(0, (s, p) => s + p.pushConfig.freqPerDay);
+    final dailyCap = global.dailyTotalCap.clamp(1, 50);
+    final overCap = totalEffectiveFreq > dailyCap;
 
     // ✅ 建 schedule（已帶 productOrder → 真排序）
     final tasks = PushScheduler.buildSchedule(
@@ -202,32 +229,41 @@ class PushOrchestrator {
         'pushOrder': t.item.pushOrder,
       };
 
-      await ns.schedule(
-        id: idSeed++,
-        when: t.when,
-        title: title,
-        body: body,
-        payload: payload,
-      );
+      try {
+        await ns.schedule(
+          id: idSeed++,
+          when: t.when,
+          title: title,
+          body: body,
+          payload: payload,
+        );
 
-      // ✅ 排程成功後，同步寫入兩個快取
-      // 1. NotificationInboxStore（收件匣）
-      await NotificationInboxStore.upsertScheduled(
-        uid: uid,
-        productId: t.productId,
-        contentItemId: t.item.id,
-        when: t.when,
-        title: title,
-        body: body,
-      );
-      
-      // 2. ScheduledPushCache（排程快取，用於時間表顯示）
-      await cache.add(ScheduledPushEntry(
-        when: t.when,
-        title: title,
-        body: body,
-        payload: payload,
-      ));
+        // ✅ 排程成功後，同步寫入兩個快取
+        // 1. NotificationInboxStore（收件匣）
+        await NotificationInboxStore.upsertScheduled(
+          uid: uid,
+          productId: t.productId,
+          contentItemId: t.item.id,
+          when: t.when,
+          title: title,
+          body: body,
+        );
+        
+        // 2. ScheduledPushCache（排程快取，用於時間表顯示）
+        await cache.add(ScheduledPushEntry(
+          when: t.when,
+          title: title,
+          body: body,
+          payload: payload,
+        ));
+      } catch (e, stackTrace) {
+        if (kDebugMode) {
+          debugPrint('❌ 排程失敗 (${t.productId} ${t.when}): $e');
+          debugPrint('Stack trace: $stackTrace');
+        }
+        // 繼續處理下一個，不中斷整個流程
+        continue;
+      }
     }
 
     // ✅ 只有在 reschedule 完成後，才消耗 skip
@@ -239,5 +275,12 @@ class PushOrchestrator {
     }
 
     ref.invalidate(scheduledCacheProvider);
+
+    return RescheduleResult(
+      overCap: overCap,
+      totalEffectiveFreq: totalEffectiveFreq,
+      dailyCap: dailyCap,
+      scheduledCount: tasks.length,
+    );
   }
 }

@@ -52,6 +52,8 @@ class PushProductConfigPage extends ConsumerWidget {
                           await ref
                               .read(libraryRepoProvider)
                               .setPushEnabled(uid!, productId, v);
+                          ref.invalidate(libraryProductsProvider);
+                          await ref.read(libraryProductsProvider.future);
                           await PushOrchestrator.rescheduleNextDays(
                               ref: ref, days: 3);
                         },
@@ -80,6 +82,8 @@ class PushProductConfigPage extends ConsumerWidget {
                           await ref
                               .read(libraryRepoProvider)
                               .setPushConfig(uid!, productId, newCfg.toMap());
+                          ref.invalidate(libraryProductsProvider);
+                          await ref.read(libraryProductsProvider.future);
                           await PushOrchestrator.rescheduleNextDays(
                               ref: ref, days: 3);
                         },
@@ -96,6 +100,8 @@ class PushProductConfigPage extends ConsumerWidget {
                           await ref
                               .read(libraryRepoProvider)
                               .setPushConfig(uid!, productId, newCfg.toMap());
+                          ref.invalidate(libraryProductsProvider);
+                          await ref.read(libraryProductsProvider.future);
                           await PushOrchestrator.rescheduleNextDays(
                               ref: ref, days: 3);
                         },
@@ -112,6 +118,8 @@ class PushProductConfigPage extends ConsumerWidget {
                           await ref
                               .read(libraryRepoProvider)
                               .setPushConfig(uid!, productId, newCfg.toMap());
+                          ref.invalidate(libraryProductsProvider);
+                          await ref.read(libraryProductsProvider.future);
                           await PushOrchestrator.rescheduleNextDays(
                               ref: ref, days: 3);
                         },
@@ -134,6 +142,8 @@ class PushProductConfigPage extends ConsumerWidget {
                           await ref
                               .read(libraryRepoProvider)
                               .setPushConfig(uid!, productId, newCfg.toMap());
+                          ref.invalidate(libraryProductsProvider);
+                          await ref.read(libraryProductsProvider.future);
                           await PushOrchestrator.rescheduleNextDays(
                               ref: ref, days: 3);
                         },
@@ -153,6 +163,8 @@ class PushProductConfigPage extends ConsumerWidget {
                           await ref
                               .read(libraryRepoProvider)
                               .setPushConfig(uid!, productId, newCfg.toMap());
+                          ref.invalidate(libraryProductsProvider);
+                          await ref.read(libraryProductsProvider.future);
                           await PushOrchestrator.rescheduleNextDays(
                               ref: ref, days: 3);
                         },
@@ -195,6 +207,8 @@ class PushProductConfigPage extends ConsumerWidget {
             await ref
                 .read(libraryRepoProvider)
                 .setPushConfig(uid, productId, newCfg.toMap());
+            ref.invalidate(libraryProductsProvider);
+            await ref.read(libraryProductsProvider.future);
             await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
           },
         );
@@ -224,6 +238,8 @@ class PushProductConfigPage extends ConsumerWidget {
               await ref
                   .read(libraryRepoProvider)
                   .setPushConfig(uid, productId, newCfg.toMap());
+              ref.invalidate(libraryProductsProvider);
+              await ref.read(libraryProductsProvider.future);
               await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
             },
             icon: const Icon(Icons.add),
@@ -244,6 +260,8 @@ class PushProductConfigPage extends ConsumerWidget {
                   await ref
                       .read(libraryRepoProvider)
                       .setPushConfig(uid, productId, newCfg.toMap());
+                  ref.invalidate(libraryProductsProvider);
+                  await ref.read(libraryProductsProvider.future);
                   await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
                 },
               ),

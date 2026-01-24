@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'scheduled_push_cache.dart';
@@ -12,6 +14,7 @@ class NotificationService {
   NotificationService._();
 
   final _cache = ScheduledPushCache();
+  bool _initialized = false;
 
   final FlutterLocalNotificationsPlugin plugin =
       FlutterLocalNotificationsPlugin();
@@ -47,6 +50,9 @@ class NotificationService {
     void Function(Map<String, dynamic> data)? onTap,
     void Function(String? payload, String? actionId)? onSelect,
   }) async {
+    if (_initialized) return;
+    _initialized = true;
+
     if (kDebugMode) {
       debugPrint('🔔 NotificationService.init 開始... uid=$uid');
     }
@@ -54,6 +60,7 @@ class NotificationService {
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
 
     // iOS init：只保留兩顆 action
+    // ✅ 將按鈕改為 foreground 模式，避免 iOS 背景執行的限制導致當機
     final iosInit = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
@@ -64,12 +71,17 @@ class NotificationService {
           actions: <DarwinNotificationAction>[
             DarwinNotificationAction.plain(
               actionLearned,
-              '我學會了',
+              '完成',
+              options: <DarwinNotificationActionOption>{
+                DarwinNotificationActionOption.foreground,
+              },
             ),
             DarwinNotificationAction.plain(
               actionLater,
-              '之後再學',
-              // 不設 foreground，避免「按一下就跳App」打擾
+              '稍候再學',
+              options: <DarwinNotificationActionOption>{
+                DarwinNotificationActionOption.foreground,
+              },
             ),
           ],
         ),
@@ -102,56 +114,102 @@ class NotificationService {
     await plugin.initialize(
       initSettings,
       onDidReceiveNotificationResponse: (resp) async {
-        final String? payloadStr = resp.payload;
-        Map<String, dynamic> payload = {};
-        if (payloadStr != null && payloadStr.isNotEmpty) {
+        // #region agent log
+        try {
+          final logFile = File('/Users/Ariel/開發中APP/LearningBubbles/.cursor/debug.log');
+          await logFile.writeAsString('{"sessionId":"debug-session","runId":"run1","hypothesisId":"F","location":"notification_service.dart:105","message":"onDidReceiveNotificationResponse START","data":{"actionId":"${resp.actionId}"},"timestamp":${DateTime.now().millisecondsSinceEpoch}}\n', mode: FileMode.append);
+        } catch (_) {}
+        // #endregion
+        
+        // ✅ 確保處理過程不會被系統立即回收
+        // 在 iOS 背景 Action 中，過長的延遲或等待 Frame 可能導致當機
+        try {
+          // #region agent log
           try {
-            payload = jsonDecode(payloadStr) as Map<String, dynamic>;
+            final logFile = File('/Users/Ariel/開發中APP/LearningBubbles/.cursor/debug.log');
+            await logFile.writeAsString('{"sessionId":"debug-session","runId":"run1","hypothesisId":"F","location":"notification_service.dart:110","message":"Processing response directly","timestamp":${DateTime.now().millisecondsSinceEpoch}}\n', mode: FileMode.append);
           } catch (_) {}
-        }
-
-        final actionId = resp.actionId;
-
-        if (kDebugMode) {
-          debugPrint('[Notification] actionId=$actionId payload=$payload');
-        }
-
-        // 點通知本體（非按鍵）：actionId 為 null 或空字串
-        if (actionId == null || actionId.isEmpty) {
-          await handlePayload(resp.payload);
-          onTap?.call(payload);
-          return;
-        }
-
-        // 點按鍵：我學會了
-        if (actionId == actionLearned) {
-          if (_onLearned != null) {
-            await _onLearned!(payload);
-          } else if (onSelect != null) {
-            // 向後兼容：調用舊的 onSelect
-            onSelect(resp.payload, actionId);
-          } else {
-            if (kDebugMode) debugPrint('[Notification] onLearned not configured');
+          // #endregion
+          
+          final String? payloadStr = resp.payload;
+          Map<String, dynamic> payload = {};
+          if (payloadStr != null && payloadStr.isNotEmpty) {
+            try {
+              payload = jsonDecode(payloadStr) as Map<String, dynamic>;
+            } catch (_) {}
           }
-          return;
-        }
 
-        // 點按鍵：之後再學
-        if (actionId == actionLater) {
-          if (_onLater != null) {
-            await _onLater!(payload);
-          } else if (onSelect != null) {
-            // 向後兼容：調用舊的 onSelect
-            onSelect(resp.payload, actionId);
-          } else {
-            if (kDebugMode) debugPrint('[Notification] onLater not configured');
+          final actionId = resp.actionId;
+
+          if (kDebugMode) {
+            debugPrint('[Notification] actionId=$actionId payload=$payload');
           }
-          return;
-        }
 
-        // 其他 action（向後兼容）
-        if (onSelect != null) {
-          onSelect(resp.payload, actionId);
+          // 點通知本體（非按鍵）：actionId 為 null 或空字串
+          if (actionId == null || actionId.isEmpty) {
+            await handlePayload(resp.payload);
+            onTap?.call(payload);
+            return;
+          }
+
+          // 點按鍵：我學會了
+          if (actionId == actionLearned) {
+            // #region agent log
+            try {
+              final logFile = File('/Users/Ariel/開發中APP/LearningBubbles/.cursor/debug.log');
+              await logFile.writeAsString('{"sessionId":"debug-session","runId":"run1","hypothesisId":"F","location":"notification_service.dart:140","message":"Before _onLearned","timestamp":${DateTime.now().millisecondsSinceEpoch}}\n', mode: FileMode.append);
+            } catch (_) {}
+            // #endregion
+            if (_onLearned != null) {
+              await _onLearned!(payload);
+            } else if (onSelect != null) {
+              onSelect(resp.payload, actionId);
+            }
+            // #region agent log
+            try {
+              final logFile = File('/Users/Ariel/開發中APP/LearningBubbles/.cursor/debug.log');
+              await logFile.writeAsString('{"sessionId":"debug-session","runId":"run1","hypothesisId":"F","location":"notification_service.dart:150","message":"After _onLearned","timestamp":${DateTime.now().millisecondsSinceEpoch}}\n', mode: FileMode.append);
+            } catch (_) {}
+            // #endregion
+            return;
+          }
+
+          // 點按鍵：之後再學
+          if (actionId == actionLater) {
+            // #region agent log
+            try {
+              final logFile = File('/Users/Ariel/開發中APP/LearningBubbles/.cursor/debug.log');
+              await logFile.writeAsString('{"sessionId":"debug-session","runId":"run1","hypothesisId":"F","location":"notification_service.dart:160","message":"Before _onLater","timestamp":${DateTime.now().millisecondsSinceEpoch}}\n', mode: FileMode.append);
+            } catch (_) {}
+            // #endregion
+            if (_onLater != null) {
+              await _onLater!(payload);
+            } else if (onSelect != null) {
+              onSelect(resp.payload, actionId);
+            }
+            // #region agent log
+            try {
+              final logFile = File('/Users/Ariel/開發中APP/LearningBubbles/.cursor/debug.log');
+              await logFile.writeAsString('{"sessionId":"debug-session","runId":"run1","hypothesisId":"F","location":"notification_service.dart:170","message":"After _onLater","timestamp":${DateTime.now().millisecondsSinceEpoch}}\n', mode: FileMode.append);
+            } catch (_) {}
+            // #endregion
+            return;
+          }
+
+          // 其他 action（向後兼容）
+          if (onSelect != null) {
+            onSelect(resp.payload, actionId);
+          }
+        } catch (e) {
+          // #region agent log
+          try {
+            final logFile = File('/Users/Ariel/開發中APP/LearningBubbles/.cursor/debug.log');
+            await logFile.writeAsString('{"sessionId":"debug-session","runId":"run1","hypothesisId":"F","location":"notification_service.dart:180","message":"Error in callback","data":{"error":"$e"},"timestamp":${DateTime.now().millisecondsSinceEpoch}}\n', mode: FileMode.append);
+          } catch (_) {}
+          // #endregion
+          if (kDebugMode) {
+            debugPrint('❌ onDidReceiveNotificationResponse error: $e');
+          }
         }
       },
       onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
@@ -226,8 +284,8 @@ class NotificationService {
       priority: Priority.high,
       styleInformation: BigTextStyleInformation(body),
       actions: const [
-        AndroidNotificationAction(actionLearned, '我學會了'),
-        AndroidNotificationAction(actionLater, '之後再學'),
+        AndroidNotificationAction(actionLearned, '完成'),
+        AndroidNotificationAction(actionLater, '稍候再學'),
       ],
     );
 
@@ -293,8 +351,8 @@ class NotificationService {
       importance: Importance.max,
       priority: Priority.high,
       actions: [
-        AndroidNotificationAction(actionLearned, '我學會了'),
-        AndroidNotificationAction(actionLater, '之後再學'),
+        AndroidNotificationAction(actionLearned, '完成'),
+        AndroidNotificationAction(actionLater, '稍候再學'),
       ],
     );
 
@@ -317,7 +375,7 @@ class NotificationService {
       await plugin.show(
         999001, // 固定 id（測試時覆蓋同一則）
         '學習泡泡🫧 30 秒',
-        '點「我學會了」會換下一則；點「之後再學」會延後。',
+        '點「完成」會換下一則；點「稍候再學」會延後。',
         details,
         payload: jsonEncode(payload),
       );

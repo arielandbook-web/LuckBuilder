@@ -9,10 +9,8 @@ import '../providers/providers.dart';
 import 'push_product_config_page.dart';
 import 'widgets/bubble_card.dart';
 import 'widgets/push_inbox_section.dart';
-import '../../notifications/notification_inbox_page.dart';
 import '../../../pages/push_timeline_page.dart';
-import '../../notifications/timeline_meta_mode.dart';
-import '../../notifications/push_timeline_list.dart';
+import '../../../notifications/push_timeline_provider.dart';
 
 class PushCenterPage extends ConsumerWidget {
   const PushCenterPage({super.key});
@@ -28,13 +26,6 @@ class PushCenterPage extends ConsumerWidget {
         title: const Text('推播中心'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.inbox_outlined),
-            tooltip: '推播收件匣',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const NotificationInboxPage(showMissedOnly: true)),
-            ),
-          ),
-          IconButton(
             icon: const Icon(Icons.timeline),
             tooltip: '未來 3 天時間表',
             onPressed: () => Navigator.of(context).push(
@@ -44,10 +35,36 @@ class PushCenterPage extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () async {
-              await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
-              // ignore: use_build_context_synchronously
-              ScaffoldMessenger.of(context)
-                  .showSnackBar(const SnackBar(content: Text('已重排未來 3 天推播')));
+              try {
+                final result = await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
+                // ignore: use_build_context_synchronously
+                if (result.overCap) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        '總推播數超過每日上限（${result.totalEffectiveFreq} > ${result.dailyCap}），部分排程可能被裁切',
+                      ),
+                    ),
+                  );
+                  return;
+                }
+                final global = await ref.read(globalPushSettingsProvider.future);
+                final scheduled = await ref.read(scheduledCacheProvider.future);
+                // ignore: use_build_context_synchronously
+                final message = !global.enabled
+                    ? '推播已關閉，無法排程'
+                    : scheduled.isEmpty
+                        ? '重排完成，但沒有產生排程（請檢查產品設定）'
+                        : '已重排未來 3 天推播（${scheduled.length} 則）';
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(message)),
+                );
+              } catch (e) {
+                // ignore: use_build_context_synchronously
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('重排失敗: $e')),
+                );
+              }
             },
           ),
           IconButton(
@@ -70,36 +87,6 @@ class PushCenterPage extends ConsumerWidget {
             data: (g) => _globalCard(context, ref, g),
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (e, _) => Text('global error: $e'),
-          ),
-
-          const SizedBox(height: 12),
-          // ✅ 推播收件匣入口
-          ListTile(
-            leading: const Icon(Icons.inbox_outlined),
-            title: const Text('推播收件匣（錯過推播）'),
-            subtitle: const Text('把你沒點到的推播集中起來補看'),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                  builder: (_) => const NotificationInboxPage(showMissedOnly: true)),
-            ),
-          ),
-
-          // ✅ 未來 3 天時間表入口
-          ListTile(
-            leading: const Icon(Icons.timeline),
-            title: const Text('未來 3 天時間表'),
-            subtitle: const Text('查看將收到哪些 Topic，可跳過下一則'),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const PushTimelinePage()),
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          // ✅ 未來 3 天時間表（嵌入式預覽）
-          _timelinePreview(
-            context: context,
-            ref: ref,
           ),
 
           const SizedBox(height: 12),
@@ -240,6 +227,29 @@ class PushCenterPage extends ConsumerWidget {
               },
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.warning_amber_rounded,
+                  color: Colors.amber,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '若產品推播加總數量超過每日總上限，部分橫幅通知會被延後推播',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.7),
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
           ListTile(
             title: const Text('推播樣式'),
             subtitle: Text(g.styleMode),
@@ -328,98 +338,6 @@ class PushCenterPage extends ConsumerWidget {
           Text('更改設定後會自動重排未來 3 天推播',
               style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.7), fontSize: 12)),
-        ],
-      ),
-    );
-  }
-
-  Widget _timelinePreview({
-    required BuildContext context,
-    required WidgetRef ref,
-  }) {
-    final metaMode = ref.watch(timelineMetaModeProvider);
-
-    return BubbleCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Text('未來 3 天時間表',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: SegmentedButton<TimelineMetaMode>(
-                    segments: const [
-                      ButtonSegment(
-                        value: TimelineMetaMode.day,
-                        label: Text('Day', style: TextStyle(fontSize: 11)),
-                      ),
-                      ButtonSegment(
-                        value: TimelineMetaMode.push,
-                        label: Text('推播', style: TextStyle(fontSize: 11)),
-                      ),
-                      ButtonSegment(
-                        value: TimelineMetaMode.nth,
-                        label: Text('第N', style: TextStyle(fontSize: 11)),
-                      ),
-                    ],
-                    selected: {metaMode},
-                    onSelectionChanged: (s) =>
-                        ref.read(timelineMetaModeProvider.notifier).state = s.first,
-                    showSelectedIcon: false,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 4),
-              TextButton(
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                onPressed: () {
-                  showModalBottomSheet(
-                    context: context,
-                    isScrollControlled: true,
-                    backgroundColor: Colors.transparent,
-                    builder: (ctx) {
-                      return DraggableScrollableSheet(
-                        initialChildSize: 0.92,
-                        minChildSize: 0.6,
-                        maxChildSize: 0.98,
-                        expand: false,
-                        builder: (_, controller) {
-                          return ClipRRect(
-                            borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-                            child: Material(
-                              color: Colors.black.withValues(alpha: 0.25),
-                              child: PushTimelineList(
-                                showTopBar: false,
-                                onClose: () => Navigator.of(ctx).pop(),
-                              ),
-                            ),
-                          );
-                        },
-                      );
-                    },
-                  );
-                },
-                child: const Text('查看全部', style: TextStyle(fontSize: 12)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 400, // 限制預覽高度
-            child: PushTimelineList(
-              showTopBar: false,
-              limit: 6,
-              dense: true,
-            ),
-          ),
         ],
       ),
     );

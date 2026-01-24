@@ -51,12 +51,32 @@ class PushScheduler {
     return list.take(5).toList();
   }
 
-  static List<TimeOfDay> _applyFreq(List<TimeOfDay> times, int freq) {
+  static List<TimeOfDay> _applyFreq(List<TimeOfDay> times, int freq, PushTimeMode timeMode, int minIntervalMinutes) {
     freq = freq.clamp(1, 5);
     if (times.isEmpty) return [presetSlotTimes['night']!];
 
     if (freq <= times.length) return times.take(freq).toList();
 
+    // ✅ 自訂時間模式：如果 freq 大於 customTimes 數量，基於現有時間擴展
+    // 例如：customTimes=[07:14], freq=2 → [07:14, 09:14]（間隔 2 小時）
+    if (timeMode == PushTimeMode.custom) {
+      final base = List<TimeOfDay>.from(times);
+      while (base.length < freq) {
+        final last = base.last;
+        final mins = _todToMin(last) + minIntervalMinutes; // 使用用戶設定的間隔
+        final newTime = TimeOfDay(hour: (mins ~/ 60) % 24, minute: mins % 60);
+        // 確保不超過當天結束（23:59）且不與現有時間重複
+        if (mins < 24 * 60 && !base.any((x) => _todToMin(x) == _todToMin(newTime))) {
+          base.add(newTime);
+        } else {
+          break; // 無法再擴展
+        }
+      }
+      base.sort((a, b) => _todToMin(a).compareTo(_todToMin(b)));
+      return base.take(5).toList();
+    }
+
+    // ✅ 預設模式：擴展時間列表
     final base = List<TimeOfDay>.from(times);
     const order = ['morning', 'noon', 'evening', 'night'];
     while (base.length < freq) {
@@ -70,7 +90,7 @@ class PushScheduler {
       }
       if (base.length >= freq) break;
       final last = base.last;
-      final mins = _todToMin(last) + 120;
+      final mins = _todToMin(last) + minIntervalMinutes;
       base.add(TimeOfDay(hour: (mins ~/ 60) % 24, minute: mins % 60));
     }
     base.sort((a, b) => _todToMin(a).compareTo(_todToMin(b)));
@@ -189,13 +209,12 @@ class PushScheduler {
         if (!_allowedDay(global, lp.pushConfig, date)) continue;
 
         final baseTimes = _resolveTimes(lp.pushConfig);
-        final times = _applyFreq(baseTimes, lp.pushConfig.freqPerDay);
+        final times = _applyFreq(baseTimes, lp.pushConfig.freqPerDay, lp.pushConfig.timeMode, lp.pushConfig.minIntervalMinutes);
 
-        // 避開 quiet hours（global + per-product）
+        // 避開 quiet hours（僅全域）
         final filtered = times.where((t) {
           final inGlobal = _inQuiet(global.quietHours, t);
-          final inProd = _inQuiet(lp.pushConfig.quietHours, t);
-          return !(inGlobal || inProd);
+          return !inGlobal;
         }).toList();
         if (filtered.isEmpty) continue;
 
@@ -230,37 +249,64 @@ class PushScheduler {
 
       // 全域每日上限
       final dailyCap = global.dailyTotalCap.clamp(1, 50);
-      dayCandidates.sort((a, b) => a.when.compareTo(b.when));
-
+      
       if (dayCandidates.length > dailyCap) {
-        // 優先：商品最愛 + 最近開啟 + 日常順序
-        int prio(PushTask t) {
-          final lp = libraryByProductId[t.productId]!;
+        // ✅ 修復：按產品分組，確保同一個產品的多個排程優先保留
+        // 計算每個產品的優先分數
+        int productPrio(String productId) {
+          final lp = libraryByProductId[productId]!;
           int score = 0;
-
-          // ✅ 日常順序越前分數越高（真排序核心）
-          final oi = idxOf(t.productId);
+          
+          final oi = idxOf(productId);
           score += (1000000 - oi).clamp(0, 1000000);
-
-          // 你原本的權重保留
+          
           if (lp.isFavorite) score += 2000;
           if (lp.lastOpenedAt != null) score += 300;
           score += lp.purchasedAt.millisecondsSinceEpoch ~/ 100000000;
-
+          
           return score;
         }
-
-        dayCandidates.sort((a, b) {
-          final pa = prio(a);
-          final pb = prio(b);
-          if (pa != pb) return pb.compareTo(pa);
-          return a.when.compareTo(b.when);
-        });
-
-        final kept = dayCandidates.take(dailyCap).toList()
-          ..sort((a, b) => a.when.compareTo(b.when));
+        
+        // 按產品分組
+        final byProduct = <String, List<PushTask>>{};
+        for (final task in dayCandidates) {
+          byProduct.putIfAbsent(task.productId, () => []).add(task);
+        }
+        
+        // ✅ 頻率優先於產品優先分數：先依 freqPerDay 降序，再依 productPrio
+        int freqOf(String pid) => libraryByProductId[pid]!.pushConfig.freqPerDay;
+        final sortedProducts = byProduct.keys.toList()
+          ..sort((a, b) {
+            final fa = freqOf(a);
+            final fb = freqOf(b);
+            if (fa != fb) return fb.compareTo(fa);
+            return productPrio(b).compareTo(productPrio(a));
+          });
+        
+        // 優先保留高頻率／高優先產品的所有排程
+        final kept = <PushTask>[];
+        for (final productId in sortedProducts) {
+          final productTasks = byProduct[productId]!;
+          // 按時間排序
+          productTasks.sort((a, b) => a.when.compareTo(b.when));
+          
+          if (kept.length + productTasks.length <= dailyCap) {
+            // 空間足夠，保留該產品的所有排程
+            kept.addAll(productTasks);
+          } else {
+            // 空間不足，只保留能放下的部分
+            final remaining = dailyCap - kept.length;
+            if (remaining > 0) {
+              kept.addAll(productTasks.take(remaining));
+            }
+            break;
+          }
+        }
+        
+        kept.sort((a, b) => a.when.compareTo(b.when));
         tasks.addAll(kept);
       } else {
+        dayCandidates.sort((a, b) => a.when.compareTo(b.when));
         tasks.addAll(dayCandidates);
       }
     }

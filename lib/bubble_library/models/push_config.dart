@@ -38,7 +38,6 @@ class PushConfig {
   final List<String> presetSlots; // morning/noon/evening/night
   final List<TimeOfDay> customTimes; // 1..5
   final Set<int> daysOfWeek; // 1..7
-  final TimeRange quietHours;
   final int minIntervalMinutes; // e.g. 120
   final PushContentMode contentMode;
 
@@ -48,7 +47,6 @@ class PushConfig {
     required this.presetSlots,
     required this.customTimes,
     required this.daysOfWeek,
-    required this.quietHours,
     required this.minIntervalMinutes,
     required this.contentMode,
   });
@@ -59,8 +57,6 @@ class PushConfig {
         presetSlots: ['night'], // 預設睡前（最不打擾）
         customTimes: [],
         daysOfWeek: {1, 2, 3, 4, 5, 6, 7},
-        quietHours: TimeRange(
-            TimeOfDay(hour: 22, minute: 0), TimeOfDay(hour: 8, minute: 0)),
         minIntervalMinutes: 120,
         contentMode: PushContentMode.seq,
       );
@@ -72,7 +68,6 @@ class PushConfig {
         'customTimes':
             customTimes.map((t) => {'h': t.hour, 'm': t.minute}).toList(),
         'daysOfWeek': daysOfWeek.toList(),
-        'quietHours': quietHours.toMap(),
         'minIntervalMinutes': minIntervalMinutes,
         'contentMode': contentMode.name,
       };
@@ -101,8 +96,6 @@ class PushConfig {
       daysOfWeek: (m['daysOfWeek'] as List<dynamic>? ?? [1, 2, 3, 4, 5, 6, 7])
           .map((e) => (e as num).toInt())
           .toSet(),
-      quietHours:
-          TimeRange.fromMap((m['quietHours'] as Map?)?.cast<String, dynamic>()),
       minIntervalMinutes:
           ((m['minIntervalMinutes'] ?? 120) as num).toInt().clamp(30, 24 * 60),
       contentMode: PushContentMode.values
@@ -116,7 +109,6 @@ class PushConfig {
     List<String>? presetSlots,
     List<TimeOfDay>? customTimes,
     Set<int>? daysOfWeek,
-    TimeRange? quietHours,
     int? minIntervalMinutes,
     PushContentMode? contentMode,
   }) {
@@ -126,7 +118,6 @@ class PushConfig {
       presetSlots: presetSlots ?? this.presetSlots,
       customTimes: customTimes ?? this.customTimes,
       daysOfWeek: daysOfWeek ?? this.daysOfWeek,
-      quietHours: quietHours ?? this.quietHours,
       minIntervalMinutes: minIntervalMinutes ?? this.minIntervalMinutes,
       contentMode: contentMode ?? this.contentMode,
     );

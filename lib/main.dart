@@ -5,10 +5,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'firebase_options.dart';
 
 import 'app_scaffold.dart';
-import 'bubble_library/notifications/timezone_init.dart';
 import 'bubble_library/bootstrapper.dart';
 import 'theme/theme_controller.dart';
-import 'theme/app_themes.dart';
+import 'theme/app_themes.dart'; 
 import 'navigation/app_nav.dart';
 import 'pages/welcome/bubble_welcome_page.dart';
 
@@ -17,7 +16,7 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  await TimezoneInit.ensureInitialized(); // ✅ 必加
+  // ✅ 時區初始化已移至 BubbleBootstrapper，避免與插件註冊衝突
 
   // 自動匿名登入（如果尚未登入）
   final auth = FirebaseAuth.instance;

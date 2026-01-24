@@ -7,6 +7,7 @@ import '../../widgets/app_card.dart';
 import '../../bubble_library/notifications/scheduled_push_cache.dart';
 import '../../bubble_library/providers/providers.dart';
 import '../../bubble_library/notifications/notification_service.dart';
+import '../../notifications/push_timeline_provider.dart';
 
 import '../../widgets/rich_sections/user_learning_store.dart';
 import '../../bubble_library/ui/product_library_page.dart';
@@ -37,7 +38,7 @@ class HomeTodayTaskSection extends ConsumerWidget {
     }
 
     final globalAsync = ref.watch(globalPushSettingsProvider);
-    final upcomingAsync = ref.watch(_todayUpcomingProvider);
+    final upcomingAsync = ref.watch(scheduledCacheProvider);
     final learnedTodayAsync = ref.watch(_globalLearnedTodayProvider);
 
     return AppCard(
@@ -289,13 +290,6 @@ class HomeTodayTaskSection extends ConsumerWidget {
     );
   }
 }
-
-/// 讀「今天之後」未來 3 天排程（真資料）
-final _todayUpcomingProvider =
-    FutureProvider<List<ScheduledPushEntry>>((ref) async {
-  return ScheduledPushCache()
-      .loadSortedUpcoming(horizon: const Duration(days: 3));
-});
 
 final _globalLearnedTodayProvider = FutureProvider<bool>((ref) async {
   return UserLearningStore().globalLearnedToday();
