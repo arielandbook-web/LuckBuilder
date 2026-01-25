@@ -45,7 +45,9 @@ class LearningProgressService {
       final contentRef = _contentStateRef(contentId);
       final progressRef = _topicProgressRef(topicId);
 
+      // ✅ 所有讀取操作必須在所有寫入操作之前執行
       final contentSnap = await tx.get(contentRef);
+      final progSnap = await tx.get(progressRef);
 
       // 已經 learned → 直接 return (避免 double increment)
       if (contentSnap.exists) {
@@ -54,6 +56,17 @@ class LearningProgressService {
         if (status == 'learned') return;
       }
 
+      // 讀取 progress，讓 nextPushOrder 至少到 pushOrder+1（不倒退）
+      int currentNext = 1;
+      if (progSnap.exists) {
+        final p = progSnap.data()!;
+        final v = p['nextPushOrder'];
+        if (v is int) currentNext = v;
+      }
+
+      final newNext = (currentNext >= nextCandidate) ? currentNext : nextCandidate;
+
+      // ✅ 所有寫入操作在所有讀取操作之後執行
       // 寫 contentState: learned
       tx.set(contentRef, {
         'topicId': topicId,
@@ -65,17 +78,7 @@ class LearningProgressService {
         if (source != null) 'source': source,
       }, SetOptions(merge: true));
 
-      // 讀 progress，讓 nextPushOrder 至少到 pushOrder+1（不倒退）
-      final progSnap = await tx.get(progressRef);
-      int currentNext = 1;
-      if (progSnap.exists) {
-        final p = progSnap.data()!;
-        final v = p['nextPushOrder'];
-        if (v is int) currentNext = v;
-      }
-
-      final newNext = (currentNext >= nextCandidate) ? currentNext : nextCandidate;
-
+      // 寫 progress
       tx.set(progressRef, {
         'topicId': topicId,
         'nextPushOrder': newNext,

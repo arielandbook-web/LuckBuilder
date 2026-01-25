@@ -529,7 +529,7 @@ class CategoryNetflixRailsSection extends ConsumerWidget {
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
+                              mainAxisSize: MainAxisSize.max,
                               children: [
                                 Text(p.title,
                                     maxLines: 2,

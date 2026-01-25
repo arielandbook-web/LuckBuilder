@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/providers.dart';
@@ -25,17 +26,24 @@ class PushProductConfigPage extends ConsumerWidget {
 
     final libAsync = ref.watch(libraryProductsProvider);
     final productsAsync = ref.watch(productsMapProvider);
+    final globalAsync = ref.watch(globalPushSettingsProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('商品推播設定')),
       body: productsAsync.when(
-        data: (products) => libAsync.when(
-          data: (lib) {
-            final lp = lib.firstWhere((e) => e.productId == productId);
-            final title = products[productId]?.title ?? productId;
-            final cfg = lp.pushConfig;
+        data: (products) => globalAsync.when(
+          data: (global) => libAsync.when(
+            data: (lib) {
+              final lp = lib.firstWhere((e) => e.productId == productId);
+              final title = products[productId]?.title ?? productId;
+              final cfg = lp.pushConfig;
+              
+              // 計算所有啟用推播的商品的總頻率
+              final totalFreq = lib
+                  .where((e) => e.pushEnabled && !e.isHidden)
+                  .fold<int>(0, (sum, e) => sum + e.pushConfig.freqPerDay);
 
-            return ListView(
+              return ListView(
               padding: const EdgeInsets.all(12),
               children: [
                 BubbleCard(
@@ -88,6 +96,55 @@ class PushProductConfigPage extends ConsumerWidget {
                               ref: ref, days: 3);
                         },
                       ),
+                      // 顯示警告：如果總頻率超過全域上限
+                      if (totalFreq > global.dailyTotalCap) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Colors.amber.withValues(alpha: 0.5),
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                Icons.warning_amber_rounded,
+                                color: Colors.amber.shade700,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '提醒：總頻率超過全域上限',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.amber.shade800,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '目前所有商品總頻率為 $totalFreq 次/天，超過全域上限 ${global.dailyTotalCap} 次/天。部分推播將不會發送。',
+                                      style: TextStyle(
+                                        color: Colors.amber.shade800,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       const Divider(),
                       const Text('時間模式',
                           style: TextStyle(fontWeight: FontWeight.w900)),
@@ -115,6 +172,15 @@ class PushProductConfigPage extends ConsumerWidget {
                         onChanged: (v) async {
                           if (v == null) return;
                           final newCfg = cfg.copyWith(timeMode: v);
+                          
+                          // 調試：確認保存的配置
+                          if (kDebugMode) {
+                            final savedMap = newCfg.toMap();
+                            debugPrint('💾 切換到自訂時間模式 - productId: $productId');
+                            debugPrint('   - timeMode: ${savedMap['timeMode']}');
+                            debugPrint('   - customTimes: ${savedMap['customTimes']}');
+                          }
+                          
                           await ref
                               .read(libraryRepoProvider)
                               .setPushConfig(uid!, productId, newCfg.toMap());
@@ -128,27 +194,7 @@ class PushProductConfigPage extends ConsumerWidget {
                       if (cfg.timeMode == PushTimeMode.custom)
                         _customTimes(context, ref, uid!, productId, cfg),
                       const Divider(),
-                      const Text('內容策略',
-                          style: TextStyle(fontWeight: FontWeight.w900)),
-                      DropdownButton<PushContentMode>(
-                        value: cfg.contentMode,
-                        items: PushContentMode.values
-                            .map((e) =>
-                                DropdownMenuItem(value: e, child: Text(e.name)))
-                            .toList(),
-                        onChanged: (v) async {
-                          if (v == null) return;
-                          final newCfg = cfg.copyWith(contentMode: v);
-                          await ref
-                              .read(libraryRepoProvider)
-                              .setPushConfig(uid!, productId, newCfg.toMap());
-                          ref.invalidate(libraryProductsProvider);
-                          await ref.read(libraryProductsProvider.future);
-                          await PushOrchestrator.rescheduleNextDays(
-                              ref: ref, days: 3);
-                        },
-                      ),
-                      const SizedBox(height: 10),
+                      // 內容策略已隱藏，待之後開發
                       const Text('最短間隔（分鐘）',
                           style: TextStyle(fontWeight: FontWeight.w900)),
                       DropdownButton<int>(
@@ -175,8 +221,11 @@ class PushProductConfigPage extends ConsumerWidget {
               ],
             );
           },
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Center(child: Text('library error: $e')),
+          ),
           loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(child: Text('library error: $e')),
+          error: (e, _) => Center(child: Text('global error: $e')),
         ),
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('products error: $e')),
@@ -234,7 +283,20 @@ class PushProductConfigPage extends ConsumerWidget {
               list.sort((a, b) =>
                   (a.hour * 60 + a.minute).compareTo(b.hour * 60 + b.minute));
 
-              final newCfg = cfg.copyWith(customTimes: list);
+              // ✅ 確保 timeMode 為 custom（當用戶新增自訂時間時）
+              final newCfg = cfg.copyWith(
+                customTimes: list,
+                timeMode: PushTimeMode.custom, // 確保時間模式為自訂
+              );
+              
+              // 調試：確認保存的配置
+              if (kDebugMode) {
+                final savedMap = newCfg.toMap();
+                debugPrint('💾 保存推播配置 - productId: $productId');
+                debugPrint('   - timeMode: ${savedMap['timeMode']}');
+                debugPrint('   - customTimes: ${savedMap['customTimes']}');
+              }
+              
               await ref
                   .read(libraryRepoProvider)
                   .setPushConfig(uid, productId, newCfg.toMap());
@@ -256,7 +318,17 @@ class PushProductConfigPage extends ConsumerWidget {
                     ..removeWhere(
                         (x) => x.hour == t.hour && x.minute == t.minute);
 
+                  // 如果刪除後沒有自訂時間了，可以選擇回退到預設模式，但這裡保持 custom 模式
                   final newCfg = cfg.copyWith(customTimes: list);
+                  
+                  // 調試：確認保存的配置
+                  if (kDebugMode) {
+                    final savedMap = newCfg.toMap();
+                    debugPrint('💾 刪除自訂時間後保存推播配置 - productId: $productId');
+                    debugPrint('   - timeMode: ${savedMap['timeMode']}');
+                    debugPrint('   - customTimes: ${savedMap['customTimes']} (剩餘 ${list.length} 個)');
+                  }
+                  
                   await ref
                       .read(libraryRepoProvider)
                       .setPushConfig(uid, productId, newCfg.toMap());

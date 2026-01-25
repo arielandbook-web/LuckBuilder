@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/global_push_settings.dart';
 import '../models/push_config.dart';
 import '../models/user_library.dart';
+import '../models/content_item.dart';
 import '../providers/providers.dart';
 import 'notification_service.dart';
 import 'push_scheduler.dart';
@@ -16,6 +17,8 @@ import '../../notifications/notification_inbox_store.dart';
 // ✅ 新增：排程快取同步
 import 'scheduled_push_cache.dart';
 import '../../notifications/push_timeline_provider.dart';
+// ✅ 新增：衝突檢查
+import 'push_schedule_conflict_checker.dart';
 
 /// 重排結果，供 UI 顯示超過每日上限等提示
 class RescheduleResult {
@@ -46,6 +49,7 @@ class PushOrchestrator {
   /// ✅ 已整合：
   /// - 真排序：DailyRoutine（本機 orderedProductIds）
   /// - Skip next：本機 skip contentItemId（只在 reschedule 時消耗）
+  /// - Missed 狀態：自動過濾已滑掉/錯過的內容
   /// 
   /// [overrideGlobal] 可選：如果提供，會優先使用此設定（用於立即更新時避免讀到舊值）
   static Future<RescheduleResult> rescheduleNextDays({
@@ -55,6 +59,19 @@ class PushOrchestrator {
   }) async {
     final uid = ref.read(uidProvider);
 
+    // ✅ 先執行 sweepMissed，確保已過期的排程被移到 missed 列表
+    // 這樣可以避免重新排程已過期但未開啟的內容
+    await NotificationInboxStore.sweepMissed(uid);
+
+    // ✅ 強制刷新所有相關 provider，確保讀到最新狀態
+    if (kDebugMode) {
+      debugPrint('🔄 強制刷新所有相關 provider...');
+    }
+    ref.invalidate(libraryProductsProvider);
+    ref.invalidate(savedItemsProvider);
+    ref.invalidate(productsMapProvider);
+
+    // ✅ 等待關鍵 provider 更新完成
     final lib = await ref.read(libraryProductsProvider.future);
     final productsMap = await ref.read(productsMapProvider.future);
 
@@ -63,6 +80,7 @@ class PushOrchestrator {
       global = overrideGlobal;
     } else {
       try {
+        ref.invalidate(globalPushSettingsProvider);
         global = await ref.read(globalPushSettingsProvider.future);
       } catch (_) {
         global = GlobalPushSettings.defaults();
@@ -71,10 +89,15 @@ class PushOrchestrator {
 
     Map<String, SavedContent> savedMap;
     try {
+      // ✅ 已在上面 invalidate，這裡會讀到最新狀態
       savedMap = await ref.read(savedItemsProvider.future);
     } catch (_) {
       savedMap = {};
     }
+
+    // ✅ Missed 清單（本機）：滑掉/錯過的內容，重排時應排除
+    final missedContentItemIds =
+        await NotificationInboxStore.loadMissedContentItemIds(uid);
 
     // ✅ Skip 清單（本機）：全域 + scoped(每商品)
     final globalSkip = await SkipNextStore.load(uid);
@@ -122,7 +145,12 @@ class PushOrchestrator {
           final customTimesStr = cfg.customTimes
               .map((t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}')
               .join(', ');
-          debugPrint('      - customTimes: [$customTimesStr]');
+          debugPrint('      - customTimes: [$customTimesStr] (數量: ${cfg.customTimes.length})');
+          if (cfg.customTimes.isEmpty) {
+            debugPrint('      ⚠️ 警告：timeMode 為 custom 但 customTimes 為空！');
+          }
+        } else {
+          debugPrint('      - customTimes: [] (未使用自訂時間模式)');
         }
         debugPrint('      - daysOfWeek: ${cfg.daysOfWeek}');
       }
@@ -130,6 +158,34 @@ class PushOrchestrator {
       debugPrint('  - contentByProduct 數量: ${contentByProduct.length}');
       for (final entry in contentByProduct.entries) {
         debugPrint('    • ${entry.key}: ${entry.value.length} 個內容項目');
+      }
+    }
+
+    // ✅ 衝突檢查
+    if (kDebugMode) {
+      try {
+        final contentByProductTyped = contentByProduct.map(
+          (k, v) => MapEntry(k, v.cast<ContentItem>()),
+        );
+        final conflictReports = await PushScheduleConflictChecker.checkAll(
+          global: global,
+          libraryByProductId: libMap,
+          contentByProduct: contentByProductTyped,
+          savedMap: savedMap,
+          uid: uid,
+        );
+
+        if (conflictReports.isNotEmpty) {
+          debugPrint('⚠️  ===== 衝突檢查報告 =====');
+          debugPrint(PushScheduleConflictChecker.formatReports(conflictReports));
+          debugPrint('⚠️  ===== 衝突檢查結束 =====');
+        } else {
+          debugPrint('✅ 衝突檢查：未發現衝突');
+        }
+      } catch (e, stackTrace) {
+        debugPrint('❌ 衝突檢查失敗: $e');
+        debugPrint('Stack trace: $stackTrace');
+        // 不中斷排程流程，繼續執行
       }
     }
 
@@ -149,6 +205,7 @@ class PushOrchestrator {
       savedMap: savedMap,
       iosSafeMaxScheduled: 60,
       productOrder: productOrder,
+      missedContentItemIds: missedContentItemIds,
     );
 
     // ✅ 診斷：顯示排程結果
@@ -176,6 +233,8 @@ class PushOrchestrator {
     // ✅ 先取消全部，再依新 tasks schedule
     final ns = NotificationService();
     final cache = ScheduledPushCache();
+    
+    // ✅ 清除排程前，不需再次執行 sweepMissed（已在函數開頭執行過）
     await ns.cancelAll();
     await cache.clear(); // ✅ 同步清除快取
 
@@ -184,6 +243,9 @@ class PushOrchestrator {
     // ✅ 這輪 reschedule 會消耗掉的 skip（只在 reschedule 才消耗）
     final consumedGlobal = <String>{};
     final consumedScoped = <String, Set<String>>{};
+
+    // ✅ 已完成通知：每個產品只排程一次（當推播到最後一則時）
+    final completionScheduledForProduct = <String>{};
 
     for (final t in tasks) {
       final contentItemId = t.item.id;
@@ -230,8 +292,9 @@ class PushOrchestrator {
       };
 
       try {
+        final notificationId = idSeed++;
         await ns.schedule(
-          id: idSeed++,
+          id: notificationId,
           when: t.when,
           title: title,
           body: body,
@@ -249,13 +312,47 @@ class PushOrchestrator {
           body: body,
         );
         
-        // 2. ScheduledPushCache（排程快取，用於時間表顯示）
+        // 2. ScheduledPushCache（排程快取，用於時間表顯示，保存 notificationId）
         await cache.add(ScheduledPushEntry(
           when: t.when,
           title: title,
           body: body,
           payload: payload,
+          notificationId: notificationId,
         ));
+
+        // ✅ 推播到最後一則時：排程「已完成 XXX 產品的學習，恭喜！」通知（每產品一次）
+        if (t.isLastInProduct && !completionScheduledForProduct.contains(t.productId)) {
+          completionScheduledForProduct.add(t.productId);
+          final completionWhen = t.when.add(const Duration(minutes: 1));
+          const completionTitle = '學習完成';
+          final completionBody = '已完成 $productTitle 的學習，恭喜！';
+          try {
+            final completionNotificationId = idSeed++;
+            await ns.schedule(
+              id: completionNotificationId,
+              when: completionWhen,
+              title: completionTitle,
+              body: completionBody,
+              payload: {
+                'type': 'completion',
+                'uid': uid,
+                'productId': t.productId,
+              },
+            );
+            await cache.add(ScheduledPushEntry(
+              when: completionWhen,
+              title: completionTitle,
+              body: completionBody,
+              payload: {'type': 'completion', 'productId': t.productId},
+              notificationId: completionNotificationId,
+            ));
+          } catch (e) {
+            if (kDebugMode) {
+              debugPrint('❌ 完成通知排程失敗 (${t.productId}): $e');
+            }
+          }
+        }
       } catch (e, stackTrace) {
         if (kDebugMode) {
           debugPrint('❌ 排程失敗 (${t.productId} ${t.when}): $e');
@@ -274,7 +371,9 @@ class PushOrchestrator {
       await SkipNextStore.removeManyForProduct(uid, entry.key, entry.value);
     }
 
+    // ✅ 刷新所有相關的 provider
     ref.invalidate(scheduledCacheProvider);
+    ref.invalidate(upcomingTimelineProvider);
 
     return RescheduleResult(
       overCap: overCap,

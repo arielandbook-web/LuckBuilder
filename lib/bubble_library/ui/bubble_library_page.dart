@@ -18,6 +18,7 @@ import '../../widgets/rich_sections/user_learning_store.dart';
 import '../../../theme/app_tokens.dart';
 import '../../collections/wishlist_provider.dart';
 import '../../pages/product_page.dart';
+import '../../notifications/favorite_sentences_store.dart';
 
 /// 本週完成度（過去 7 天含今天）
 final weeklyCountProvider =
@@ -25,7 +26,7 @@ final weeklyCountProvider =
   return UserLearningStore().weeklyCount(productId);
 });
 
-enum LibraryView { purchased, wishlist, favorites, history }
+enum LibraryView { purchased, wishlist, favorites, history, favoriteSentences }
 
 class BubbleLibraryPage extends ConsumerStatefulWidget {
   const BubbleLibraryPage({super.key});
@@ -40,7 +41,7 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
   
   // ✅ 階段 4：搜尋/篩選狀態
   final TextEditingController _searchController = TextEditingController();
-  Set<String> _selectedProductIds = {};
+  final Set<String> _selectedProductIds = {};
   int _selectedHistoryTab = 0; // 0 = 待學習, 1 = 已學習
 
   @override
@@ -167,6 +168,15 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
               setState(() => currentView = LibraryView.history);
             },
           ),
+          ListTile(
+            leading: const Icon(Icons.format_quote),
+            title: const Text('收藏今日一句'),
+            selected: currentView == LibraryView.favoriteSentences,
+            onTap: () {
+              Navigator.pop(context);
+              setState(() => currentView = LibraryView.favoriteSentences);
+            },
+          ),
         ],
       ),
     );
@@ -189,6 +199,8 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
         return _buildFavoritesTab(context, visibleLib, wishItems, productsMap);
       case LibraryView.history:
         return _buildHistoryView(context);
+      case LibraryView.favoriteSentences:
+        return _buildFavoriteSentencesTab(context);
     }
   }
 
@@ -388,7 +400,7 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
         final p = productsMap[w.productId]!;
         final title = p.title;
 
-        Widget _chip(String label) {
+        Widget chip(String label) {
           return Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
@@ -452,8 +464,8 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
                     Wrap(
                       spacing: 8,
                       children: [
-                        _chip('未購買'),
-                        _chip('試讀可用'),
+                        chip('未購買'),
+                        chip('試讀可用'),
                       ],
                     ),
                     const SizedBox(height: 10),
@@ -589,7 +601,7 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
                 if (snapshot.hasError) {
                   return Center(
                     child: Text('載入錯誤: ${snapshot.error}',
-                        style: TextStyle(color: Colors.red)),
+                        style: const TextStyle(color: Colors.red)),
                   );
                 }
 
@@ -1121,7 +1133,7 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
         padding: const EdgeInsets.only(bottom: 10),
         child: BubbleCard(
           child: Text('載入錯誤: $e',
-              style: TextStyle(color: Colors.red)),
+              style: const TextStyle(color: Colors.red)),
         ),
       ),
     );
@@ -1354,6 +1366,215 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
         debugPrint('重排推播失敗: $e');
       }
     });
+  }
+
+  Widget _buildFavoriteSentencesTab(BuildContext context) {
+    // 檢查是否登入
+    String? uid;
+    try {
+      uid = ref.read(uidProvider);
+    } catch (_) {
+      return const Center(child: Text('請先登入以使用此功能'));
+    }
+
+    final productsAsync = ref.watch(productsMapProvider);
+
+    return productsAsync.when(
+      data: (productsMap) {
+        return FutureBuilder<List<FavoriteSentence>>(
+          future: FavoriteSentencesStore.loadAll(uid!),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            if (snapshot.hasError) {
+              return Center(
+                child: Text('載入錯誤: ${snapshot.error}',
+                    style: const TextStyle(color: Colors.red)),
+              );
+            }
+
+            final sentences = snapshot.data ?? [];
+
+            if (sentences.isEmpty) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.format_quote,
+                        size: 64, color: Colors.white.withValues(alpha: 0.5)),
+                    const SizedBox(height: 16),
+                    Text(
+                      '目前沒有收藏的今日一句',
+                      style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.8),
+                          fontSize: 16),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '在內容詳情頁點擊 ⭐ 按鈕來收藏',
+                      style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.6),
+                          fontSize: 14),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            return ListView.separated(
+              padding: const EdgeInsets.all(12),
+              itemCount: sentences.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (context, index) {
+                final sentence = sentences[index];
+                final tokens = context.tokens;
+
+                // 格式化收藏日期
+                String formatDate(DateTime date) {
+                  final now = DateTime.now();
+                  final diff = now.difference(date);
+                  if (diff.inDays == 0) {
+                    return '今天';
+                  } else if (diff.inDays == 1) {
+                    return '昨天';
+                  } else if (diff.inDays < 7) {
+                    return '${diff.inDays} 天前';
+                  } else {
+                    return '${date.year}/${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')}';
+                  }
+                }
+
+                return BubbleCard(
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            DetailPage(contentItemId: sentence.contentItemId),
+                      ),
+                    );
+                  },
+                  child: Stack(
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // 產品名稱（標題）
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.inventory_2_outlined,
+                                size: 16,
+                                color: tokens.textPrimary,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  sentence.productName,
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                    color: tokens.textPrimary,
+                                    height: 1.2,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          // anchor group（副標題）
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.label_outline,
+                                size: 14,
+                                color: tokens.textSecondary,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  sentence.anchorGroup,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: tokens.textSecondary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          // anchor（小字）
+                          Text(
+                            sentence.anchor,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.white.withValues(alpha: 0.7),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          // content（「今日一句」內容，主要顯示）
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.05),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.1),
+                              ),
+                            ),
+                            child: Text(
+                              sentence.content,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                height: 1.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          // 收藏日期（右下角）
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: Text(
+                              formatDate(sentence.favoritedAt),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.white.withValues(alpha: 0.5),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      // 刪除按鈕（右上角）
+                      Positioned(
+                        top: 0,
+                        right: 0,
+                        child: IconButton(
+                          icon: const Icon(Icons.delete_outline, size: 20),
+                          color: Colors.white.withValues(alpha: 0.6),
+                          onPressed: () async {
+                            if (uid == null) return;
+                            await FavoriteSentencesStore.remove(
+                                uid, sentence.contentItemId);
+                            // 刷新列表
+                            setState(() {});
+                          },
+                          tooltip: '取消收藏',
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(child: Text('products error: $e')),
+    );
   }
 }
 

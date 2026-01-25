@@ -1,5 +1,5 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '../models/content_item.dart';
 import '../models/global_push_settings.dart';
 import '../models/push_config.dart';
@@ -9,7 +9,15 @@ class PushTask {
   final String productId;
   final DateTime when;
   final ContentItem item;
-  PushTask({required this.productId, required this.when, required this.item});
+  /// 是否為該產品的最後一則內容（完成此則即完成產品）
+  final bool isLastInProduct;
+
+  PushTask({
+    required this.productId,
+    required this.when,
+    required this.item,
+    this.isLastInProduct = false,
+  });
 }
 
 class PushScheduler {
@@ -28,10 +36,25 @@ class PushScheduler {
     final cur = _todToMin(t);
 
     // ✅ 修復：start == end 時視為「無勿擾時段」（例如 0:0 - 0:0）
-    if (start == end) return false;
+    if (start == end) {
+      if (kDebugMode) {
+        debugPrint('  ℹ️ _inQuiet: 無勿擾時段（start == end），時間 ${t.hour}:${t.minute} 不在勿擾時段');
+      }
+      return false;
+    }
 
-    if (start < end) return cur >= start && cur < end; // same-day
-    return cur >= start || cur < end; // crosses midnight
+    bool result;
+    if (start < end) {
+      result = cur >= start && cur < end; // same-day
+    } else {
+      result = cur >= start || cur < end; // crosses midnight
+    }
+    
+    if (kDebugMode && result) {
+      debugPrint('  ⚠️ _inQuiet: 時間 ${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')} 在勿擾時段內（${q.start.hour}:${q.start.minute} - ${q.end.hour}:${q.end.minute}）');
+    }
+    
+    return result;
   }
 
   static DateTime _at(DateTime date, TimeOfDay tod) =>
@@ -39,9 +62,25 @@ class PushScheduler {
 
   static List<TimeOfDay> _resolveTimes(PushConfig cfg) {
     if (cfg.timeMode == PushTimeMode.custom && cfg.customTimes.isNotEmpty) {
+      if (kDebugMode) {
+        final customTimesStr = cfg.customTimes
+            .map((t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}')
+            .join(', ');
+        debugPrint('✅ _resolveTimes: 使用自訂時間模式，customTimes: [$customTimesStr]');
+      }
       final list = List<TimeOfDay>.from(cfg.customTimes)
         ..sort((a, b) => _todToMin(a).compareTo(_todToMin(b)));
-      return list.take(5).toList();
+      final result = list.take(5).toList();
+      if (kDebugMode) {
+        final resultStr = result
+            .map((t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}')
+            .join(', ');
+        debugPrint('✅ _resolveTimes: 返回自訂時間列表: [$resultStr]');
+      }
+      return result;
+    }
+    if (kDebugMode) {
+      debugPrint('ℹ️ _resolveTimes: 使用預設時間模式，timeMode: ${cfg.timeMode.name}, customTimes.isEmpty: ${cfg.customTimes.isEmpty}');
     }
     final slots = cfg.presetSlots.isEmpty ? ['night'] : cfg.presetSlots;
     final list = slots
@@ -126,50 +165,33 @@ class PushScheduler {
     return out;
   }
 
-  static ContentItem? _pickItem({
+  /// 按順序推播未學習的內容：從 nextSeq 起依序找第一個未學習的。
+  /// 回傳 (picked, isLastInProduct)。若全部已學習則 picked 為 null。
+  static (ContentItem? picked, bool isLastInProduct) _pickSequentialUnlearned({
     required List<ContentItem> itemsSorted,
     required ProgressState progress,
     required Map<String, SavedContent> savedMap,
-    required PushContentMode mode,
+    Set<String> missedContentItemIds = const {},
   }) {
-    if (itemsSorted.isEmpty) return null;
+    if (itemsSorted.isEmpty) return (null, false);
 
     ContentItem? bySeq(int seq) {
       final idx = itemsSorted.indexWhere((e) => e.seq == seq);
       return idx >= 0 ? itemsSorted[idx] : null;
     }
 
-    if (mode == PushContentMode.seq) {
-      return bySeq(progress.nextSeq) ?? itemsSorted.first;
-    }
+    final maxSeq = itemsSorted.map((e) => e.seq).reduce((a, b) => a > b ? a : b);
 
-    if (mode == PushContentMode.preferSaved) {
-      return itemsSorted.firstWhere(
-        (e) =>
-            (savedMap[e.id]?.favorite ?? false) ||
-            (savedMap[e.id]?.reviewLater ?? false),
-        orElse: () => bySeq(progress.nextSeq) ?? itemsSorted.first,
-      );
+    for (int seq = progress.nextSeq; seq <= maxSeq; seq++) {
+      final item = bySeq(seq);
+      if (item == null) continue;
+      if (savedMap[item.id]?.learned ?? false) continue;
+      // ✅ 已被使用者滑掉/判定 missed 的內容：重排時排除，避免一直推同一則
+      if (missedContentItemIds.contains(item.id)) continue;
+      final isLast = (seq == maxSeq);
+      return (item, isLast);
     }
-
-    if (mode == PushContentMode.preferUnlearned) {
-      return itemsSorted.firstWhere(
-        (e) => !(savedMap[e.id]?.learned ?? false),
-        orElse: () => bySeq(progress.nextSeq) ?? itemsSorted.first,
-      );
-    }
-
-    // mixNewReview
-    final r = Random();
-    if (r.nextDouble() < 0.3) {
-      return itemsSorted.firstWhere(
-        (e) =>
-            (savedMap[e.id]?.reviewLater ?? false) ||
-            (savedMap[e.id]?.favorite ?? false),
-        orElse: () => bySeq(progress.nextSeq) ?? itemsSorted.first,
-      );
-    }
-    return bySeq(progress.nextSeq) ?? itemsSorted.first;
+    return (null, false);
   }
 
   static List<PushTask> buildSchedule({
@@ -183,6 +205,9 @@ class PushScheduler {
 
     // ✅ 新增：真排序用的「日常順序」(本機)
     List<String>? productOrder,
+
+    // ✅ 新增：missed 的 contentItemId（用於排除已滑掉/錯過的內容）
+    Set<String> missedContentItemIds = const {},
   }) {
     if (!global.enabled) return [];
 
@@ -209,32 +234,67 @@ class PushScheduler {
         if (!_allowedDay(global, lp.pushConfig, date)) continue;
 
         final baseTimes = _resolveTimes(lp.pushConfig);
+        if (kDebugMode && lp.pushConfig.timeMode == PushTimeMode.custom) {
+          final baseTimesStr = baseTimes
+              .map((t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}')
+              .join(', ');
+          debugPrint('  📅 buildSchedule: ${lp.productId} 在 ${date.year}-${date.month}-${date.day}，baseTimes: [$baseTimesStr]');
+        }
+        
         final times = _applyFreq(baseTimes, lp.pushConfig.freqPerDay, lp.pushConfig.timeMode, lp.pushConfig.minIntervalMinutes);
+        if (kDebugMode && lp.pushConfig.timeMode == PushTimeMode.custom) {
+          final timesStr = times
+              .map((t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}')
+              .join(', ');
+          debugPrint('  📅 buildSchedule: ${lp.productId} 在 ${date.year}-${date.month}-${date.day}，應用頻率後 times: [$timesStr] (freq: ${lp.pushConfig.freqPerDay})');
+        }
 
         // 避開 quiet hours（僅全域）
         final filtered = times.where((t) {
           final inGlobal = _inQuiet(global.quietHours, t);
           return !inGlobal;
         }).toList();
-        if (filtered.isEmpty) continue;
+        
+        if (kDebugMode && lp.pushConfig.timeMode == PushTimeMode.custom) {
+          final filteredStr = filtered
+              .map((t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}')
+              .join(', ');
+          final removedCount = times.length - filtered.length;
+          debugPrint('  📅 buildSchedule: ${lp.productId} 在 ${date.year}-${date.month}-${date.day}，勿擾時段過濾後: [$filteredStr] (移除了 $removedCount 個時間)');
+        }
+        
+        if (filtered.isEmpty) {
+          if (kDebugMode && lp.pushConfig.timeMode == PushTimeMode.custom) {
+            debugPrint('  ⚠️ buildSchedule: ${lp.productId} 在 ${date.year}-${date.month}-${date.day}，所有自訂時間都被過濾掉！');
+          }
+          continue;
+        }
 
         final dts = filtered.map((t) => _at(date, t)).toList()..sort();
-        final enforced =
-            _enforceMinInterval(dts, lp.pushConfig.minIntervalMinutes)
+        
+        // ✅ 自訂時間模式：即使小於最短間隔，仍以自訂時間為主
+        final enforced = lp.pushConfig.timeMode == PushTimeMode.custom
+            ? dts.take(5).toList() // 自訂時間模式：不強制執行最短間隔
+            : _enforceMinInterval(dts, lp.pushConfig.minIntervalMinutes)
                 .take(5)
                 .toList();
+        
+        if (kDebugMode && lp.pushConfig.timeMode == PushTimeMode.custom) {
+          final enforcedStr = enforced
+              .map((dt) => '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}')
+              .join(', ');
+          debugPrint('  📅 buildSchedule: ${lp.productId} 在 ${date.year}-${date.month}-${date.day}，最終排程時間: [$enforcedStr] (自訂時間模式，不強制最短間隔)');
+        }
 
         final items =
             List<ContentItem>.from(contentByProduct[lp.productId] ?? const [])
               ..sort((a, b) => a.seq.compareTo(b.seq));
 
-        // ✅ 階段 10：推播改為優先待學習（preferUnlearned）
-        // 一律使用 preferUnlearned，不再依各產品 contentMode
-        final picked = _pickItem(
+        final (picked, isLastInProduct) = _pickSequentialUnlearned(
           itemsSorted: items,
           progress: lp.progress,
           savedMap: savedMap,
-          mode: PushContentMode.preferUnlearned,
+          missedContentItemIds: missedContentItemIds,
         );
         if (picked == null) continue;
 
@@ -242,8 +302,12 @@ class PushScheduler {
           if (di == 0 && when.isBefore(now.add(const Duration(minutes: 1)))) {
             continue;
           }
-          dayCandidates
-              .add(PushTask(productId: lp.productId, when: when, item: picked));
+          dayCandidates.add(PushTask(
+            productId: lp.productId,
+            when: when,
+            item: picked,
+            isLastInProduct: isLastInProduct,
+          ));
         }
       }
 

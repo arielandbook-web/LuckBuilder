@@ -11,6 +11,8 @@ import '../models/product.dart';
 import '../models/content_item.dart';
 import '../models/user_library.dart';
 import '../models/global_push_settings.dart';
+import '../../notifications/favorite_sentences_store.dart';
+import '../../services/learning_progress_service.dart';
 
 final firebaseAuthProvider =
     Provider<FirebaseAuth>((ref) => FirebaseAuth.instance);
@@ -31,6 +33,14 @@ final libraryRepoProvider =
     Provider<LibraryRepo>((ref) => LibraryRepo(ref.watch(firestoreProvider)));
 final pushSettingsRepoProvider = Provider<PushSettingsRepo>(
     (ref) => PushSettingsRepo(ref.watch(firestoreProvider)));
+
+// ✅ LearningProgressService 透過 Provider 管理，統一使用 firestoreProvider 和 firebaseAuthProvider
+final learningProgressServiceProvider = Provider<LearningProgressService>((ref) {
+  return LearningProgressService(
+    firestore: ref.watch(firestoreProvider),
+    auth: ref.watch(firebaseAuthProvider),
+  );
+});
 
 final productsMapProvider = FutureProvider<Map<String, Product>>((ref) async {
   return ref.read(productRepoProvider).getAll();
@@ -64,4 +74,9 @@ final contentByProductProvider =
 final contentItemProvider =
     FutureProvider.family<ContentItem, String>((ref, contentItemId) async {
   return ref.read(contentRepoProvider).getOne(contentItemId);
+});
+
+final favoriteSentencesProvider =
+    FutureProvider.family<List<FavoriteSentence>, String>((ref, uid) async {
+  return FavoriteSentencesStore.loadAll(uid);
 });

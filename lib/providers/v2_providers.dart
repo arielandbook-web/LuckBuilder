@@ -91,18 +91,10 @@ final searchLevelFilterProvider =
     StateProvider<SearchLevelFilter>((ref) => SearchLevelFilter.all);
 
 // 全部產品 Map（使用 lib/data/models.dart 的 Product，有 topicId）
+// ✅ 已改為透過 V2Repository 控管
 final allProductsMapProvider =
     FutureProvider<Map<String, Product>>((ref) async {
-  final snap = await FirebaseFirestore.instance
-      .collection('products')
-      .where('published', isEqualTo: true)
-      .get();
-
-  final map = <String, Product>{};
-  for (final d in snap.docs) {
-    map[d.id] = Product.fromDoc(d.id, d.data());
-  }
-  return map;
+  return ref.watch(v2RepoProvider).fetchAllProductsMap();
 });
 
 final autoNewArrivalsProvider = Provider<List<Product>>((ref) {
@@ -122,25 +114,13 @@ final autoNewArrivalsProvider = Provider<List<Product>>((ref) {
 });
 
 // 本週新泡泡（已上架：order 倒序）
+// ✅ 已改為透過 V2Repository 控管
 final newArrivalsProvider = FutureProvider<List<Product>>((ref) async {
-  final snap = await FirebaseFirestore.instance
-      .collection('products')
-      .where('published', isEqualTo: true)
-      .orderBy('order', descending: true)
-      .limit(12)
-      .get();
-
-  return snap.docs.map((d) => Product.fromDoc(d.id, d.data())).toList();
+  return ref.watch(v2RepoProvider).fetchNewArrivals(limit: 12);
 });
 
 // 即將上架（未上架：order 倒序）
+// ✅ 已改為透過 V2Repository 控管
 final upcomingProductsProvider = FutureProvider<List<Product>>((ref) async {
-  final snap = await FirebaseFirestore.instance
-      .collection('products')
-      .where('published', isEqualTo: false)
-      .orderBy('order', descending: true)
-      .limit(8)
-      .get();
-
-  return snap.docs.map((d) => Product.fromDoc(d.id, d.data())).toList();
+  return ref.watch(v2RepoProvider).fetchUpcomingProducts(limit: 8);
 });

@@ -158,7 +158,12 @@ class _ContinueCard extends StatelessWidget {
   String _extractDay(String body) {
     final firstLine = body.split('\n').first;
     final m = RegExp(r'Day\s+(\d+)/365').firstMatch(firstLine);
-    return m == null ? '' : '（Day ${m.group(1)}）';
+    // 如果找不到舊格式，嘗試找新格式（只有數字）
+    if (m == null) {
+      final m2 = RegExp(r'(\d+)/365').firstMatch(firstLine);
+      return m2 == null ? '' : '（${m2.group(1)}）';
+    }
+    return '（${m.group(1)}）';
   }
 
   @override
@@ -195,7 +200,7 @@ class _ContinueCard extends StatelessWidget {
                           fontWeight: FontWeight.w900,
                           color: tokens.textPrimary)),
                   const SizedBox(height: 6),
-                  Text('Day $day/365 · $productId',
+                  Text('$day/365 · $productId',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style:
