@@ -27,7 +27,6 @@ class HomePage extends ConsumerWidget {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-
           // ✅ 新上架
           const _Section(title: '新上架'),
           newArrivals.when(

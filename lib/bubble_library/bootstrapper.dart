@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../services/learning_progress_service.dart';
+import '../../notifications/notification_inbox_store.dart';
 import 'notifications/notification_service.dart';
+import 'notifications/notification_scheduler.dart';
 import 'notifications/push_orchestrator.dart';
 import 'notifications/timezone_init.dart';
 import 'providers/providers.dart';
@@ -47,8 +49,9 @@ class _BubbleBootstrapperState extends ConsumerState<BubbleBootstrapper> {
       }
     });
 
-    // 初始化 LearningProgressService
-    final progress = LearningProgressService();
+    // ✅ 透過 Provider 獲取 LearningProgressService（統一管理 Firestore 實例）
+    final progress = ref.read(learningProgressServiceProvider);
+    final libraryRepo = ref.read(libraryRepoProvider);
 
     // 配置 NotificationService 的 action callbacks
     // ✅ 重要：回調中必須 invalidate providers 以確保 UI 更新
@@ -77,32 +80,42 @@ class _BubbleBootstrapperState extends ConsumerState<BubbleBootstrapper> {
           debugPrint('📋 Parsed: topicId=$topicId contentId=$contentId pushOrder=$pushOrder (raw: $pushOrderRaw, type: ${pushOrderRaw.runtimeType})');
         }
 
-        if (topicId == null || contentId == null || pushOrder == null) {
-          if (kDebugMode) {
-            debugPrint(
-                '⚠️ markLearnedAndAdvance: missing fields topicId=$topicId contentId=$contentId pushOrder=$pushOrder');
+        // ✅ 降級邏輯：即使缺少 topicId 或 pushOrder，也使用 libraryRepo 標記為已學習
+        if (contentId != null && contentId.isNotEmpty) {
+          try {
+            await libraryRepo.setSavedItem(uid, contentId, {'learned': true});
+            if (kDebugMode) {
+              debugPrint('✅ setSavedItem learned=true: contentId=$contentId');
+            }
+          } catch (e) {
+            if (kDebugMode) {
+              debugPrint('❌ setSavedItem error: $e');
+            }
           }
-          return;
         }
 
-        try {
-          await progress.markLearnedAndAdvance(
-            topicId: topicId,
-            contentId: contentId,
-            pushOrder: pushOrder,
-            source: 'ios_action',
-          );
-          // ✅ 確保 UI 更新：invalidate savedItemsProvider
-          ref.invalidate(savedItemsProvider);
-          ref.invalidate(libraryProductsProvider);
-          if (kDebugMode) {
-            debugPrint(
-                '✅ markLearnedAndAdvance: topicId=$topicId contentId=$contentId pushOrder=$pushOrder');
-          }
-        } catch (e, stackTrace) {
-          if (kDebugMode) {
-            debugPrint('❌ markLearnedAndAdvance error: $e');
-            debugPrint('Stack trace: $stackTrace');
+        // 嘗試使用 LearningProgressService（如果資料完整）
+        if (topicId != null && contentId != null && pushOrder != null) {
+          try {
+            await progress.markLearnedAndAdvance(
+              topicId: topicId,
+              contentId: contentId,
+              pushOrder: pushOrder,
+              source: 'ios_action',
+            );
+            // ✅ 確保 UI 更新：invalidate savedItemsProvider
+            ref.invalidate(savedItemsProvider);
+            ref.invalidate(libraryProductsProvider);
+            if (kDebugMode) {
+              debugPrint(
+                  '✅ markLearnedAndAdvance: topicId=$topicId contentId=$contentId pushOrder=$pushOrder');
+            }
+          } catch (e, stackTrace) {
+            // 忽略錯誤，已經用 setSavedItem 標記了
+            if (kDebugMode) {
+              debugPrint('⚠️ markLearnedAndAdvance failed (fallback used): $e');
+              debugPrint('Stack trace: $stackTrace');
+            }
           }
         }
       },
@@ -129,32 +142,60 @@ class _BubbleBootstrapperState extends ConsumerState<BubbleBootstrapper> {
           debugPrint('📋 Parsed: topicId=$topicId contentId=$contentId pushOrder=$pushOrder (raw: $pushOrderRaw, type: ${pushOrderRaw.runtimeType})');
         }
 
-        if (topicId == null || contentId == null || pushOrder == null) {
-          if (kDebugMode) {
-            debugPrint(
-                '⚠️ snoozeContent: missing fields topicId=$topicId contentId=$contentId pushOrder=$pushOrder');
+        // ✅ 降級邏輯：即使缺少 topicId 或 pushOrder，也使用 libraryRepo 標記為稍後再學
+        if (contentId != null && contentId.isNotEmpty) {
+          try {
+            await libraryRepo.setSavedItem(uid, contentId, {'reviewLater': true});
+            if (kDebugMode) {
+              debugPrint('✅ setSavedItem reviewLater=true: contentId=$contentId');
+            }
+          } catch (e) {
+            if (kDebugMode) {
+              debugPrint('❌ setSavedItem error: $e');
+            }
           }
-          return;
         }
 
+        // 嘗試使用 LearningProgressService（如果資料完整）
+        if (topicId != null && contentId != null && pushOrder != null) {
+          try {
+            await progress.snoozeContent(
+              topicId: topicId,
+              contentId: contentId,
+              pushOrder: pushOrder,
+              duration: const Duration(hours: 6),
+              source: 'ios_action',
+            );
+            if (kDebugMode) {
+              debugPrint(
+                  '🌙 snoozeContent: topicId=$topicId contentId=$contentId pushOrder=$pushOrder');
+            }
+          } catch (e) {
+            // 忽略錯誤，已經用 setSavedItem 標記了
+            if (kDebugMode) {
+              debugPrint('⚠️ snoozeContent failed (fallback used): $e');
+            }
+          }
+        }
+      },
+      // ✅ 重排回調：在完成/稍候再學後重排未來 3 天
+      onReschedule: () async {
         try {
-          await progress.snoozeContent(
-            topicId: topicId,
-            contentId: contentId,
-            pushOrder: pushOrder,
-            duration: const Duration(hours: 6), // ✅ 可改成明天 9:00（之後可調整）
-            source: 'ios_action',
+          final scheduler = ref.read(notificationSchedulerProvider);
+          await scheduler.schedule(
+            ref: ref,
+            days: 3,
+            source: 'notification_action_callback',
+            immediate: true, // 通知 action 後立即排程
           );
           // ✅ 確保 UI 更新：invalidate savedItemsProvider
           ref.invalidate(savedItemsProvider);
           if (kDebugMode) {
-            debugPrint(
-                '🌙 snoozeContent: topicId=$topicId contentId=$contentId pushOrder=$pushOrder');
+            debugPrint('🔄 onReschedule: 已重排未來 3 天');
           }
-        } catch (e, stackTrace) {
+        } catch (e) {
           if (kDebugMode) {
-            debugPrint('❌ snoozeContent error: $e');
-            debugPrint('Stack trace: $stackTrace');
+            debugPrint('❌ onReschedule error: $e');
           }
         }
       },
@@ -199,12 +240,23 @@ class _BubbleBootstrapperState extends ConsumerState<BubbleBootstrapper> {
     // App 啟動：登入後會自動重排一次（若此刻未登入會略過）
     Future.microtask(() async {
       try {
-        await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
+        final scheduler = ref.read(notificationSchedulerProvider);
+        await scheduler.schedule(
+          ref: ref,
+          days: 3,
+          source: 'app_startup',
+        );
       } catch (_) {}
     });
   }
 
   /// 處理通知按鈕點擊（確保在主線程執行）
+  /// 
+  /// 狀態更新流程：
+  /// 1. 先掃描過期的通知（sweepMissed）
+  /// 2. 標記已讀/學習狀態（markOpened + LearningProgressService）
+  /// 3. 重新排程未來推播（rescheduleNextDays）
+  /// 4. 刷新 UI（_onStatusChanged）
   Future<void> _handleNotificationAction(
     String? payload,
     String? actionId,
@@ -221,7 +273,7 @@ class _BubbleBootstrapperState extends ConsumerState<BubbleBootstrapper> {
     final data = PushOrchestrator.decodePayload(payload);
     if (data == null) return;
 
-    // 注意：自動標記已讀已在 NotificationService.init 內部處理
+    // ✅ 自動標記已讀已在 NotificationService.init 內部處理（handlePayload）
 
     final productId = data['productId'] as String?;
     final contentItemId = data['contentItemId'] as String?;
@@ -231,6 +283,7 @@ class _BubbleBootstrapperState extends ConsumerState<BubbleBootstrapper> {
     final pushOrderRaw = data['pushOrder'];
 
     final repo = ref.read(libraryRepoProvider);
+    final ns = NotificationService();
 
     // action：先寫回資料
     final cid = contentItemId;
@@ -238,7 +291,19 @@ class _BubbleBootstrapperState extends ConsumerState<BubbleBootstrapper> {
     
     // 新的 2 個 action
     if (actionId == NotificationService.actionLearned && cid != null) {
-      // ✅ 使用 LearningProgressService 標記為已學會（統一學習狀態管理）
+      // ✅ 1) 先掃描過期的通知
+      await NotificationInboxStore.sweepMissed(uid);
+      
+      // ✅ 2) 標記為已讀（opened 優先於 missed）
+      if (pid != null && pid.isNotEmpty) {
+        await NotificationInboxStore.markOpened(
+          uid,
+          productId: pid,
+          contentItemId: cid,
+        );
+      }
+      
+      // ✅ 3) 使用 LearningProgressService 標記為已學會（統一學習狀態管理）
       int? pushOrder;
       if (pushOrderRaw is int) {
         pushOrder = pushOrderRaw;
@@ -273,8 +338,15 @@ class _BubbleBootstrapperState extends ConsumerState<BubbleBootstrapper> {
         await repo.setSavedItem(uid, cid, {'learned': true});
         ref.invalidate(savedItemsProvider);
       }
+      
+      // ✅ 4) 取消該內容的推播
+      await ns.cancelByContentItemId(cid);
+      
     } else if (actionId == NotificationService.actionLater && cid != null) {
-      // ✅ 使用 LearningProgressService 稍後再學（統一學習狀態管理）
+      // ✅ 1) 先掃描過期的通知
+      await NotificationInboxStore.sweepMissed(uid);
+      
+      // ✅ 2) 使用 LearningProgressService 稍後再學（統一學習狀態管理）
       int? pushOrder;
       if (pushOrderRaw is int) {
         pushOrder = pushOrderRaw;
@@ -309,6 +381,9 @@ class _BubbleBootstrapperState extends ConsumerState<BubbleBootstrapper> {
         await repo.setSavedItem(uid, cid, {'reviewLater': true});
         ref.invalidate(savedItemsProvider);
       }
+      
+      // ✅ 3) 取消該內容的推播
+      await ns.cancelByContentItemId(cid);
     }
 
     // 點通知本體：跳轉（延遲執行，確保 Flutter 引擎已準備好）
@@ -369,7 +444,13 @@ class _BubbleBootstrapperState extends ConsumerState<BubbleBootstrapper> {
           await logFile.writeAsString('{"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"bootstrapper.dart:308","message":"After TimezoneInit, before rescheduleNextDays","timestamp":${DateTime.now().millisecondsSinceEpoch}}\n', mode: FileMode.append);
         } catch (_) {}
         // #endregion
-        await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
+        // ✅ 使用統一排程入口
+        final scheduler = ref.read(notificationSchedulerProvider);
+        await scheduler.schedule(
+          ref: ref,
+          days: 3,
+          source: 'notification_tap',
+        );
         // #region agent log
         try {
           final logFile = File('/Users/Ariel/開發中APP/LearningBubbles/.cursor/debug.log');

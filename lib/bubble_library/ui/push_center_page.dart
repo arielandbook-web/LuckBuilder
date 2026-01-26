@@ -296,20 +296,41 @@ class PushCenterPage extends ConsumerWidget {
             subtitle: Text('${g.dailyTotalCap} 則/天'),
             trailing: DropdownButton<int>(
               value: g.dailyTotalCap,
-              items: const [6, 8, 12, 20]
-                  .map((e) => DropdownMenuItem(value: e, child: Text('$e')))
-                  .toList(),
+              items: (() {
+                const presets = <int>[6, 8, 12, 20];
+                final values = {...presets, g.dailyTotalCap}.toList()..sort();
+                return values.map((e) {
+                  final label =
+                      presets.contains(e) ? '$e' : '$e（自訂）';
+                  return DropdownMenuItem(value: e, child: Text(label));
+                }).toList();
+              })(),
               onChanged: (v) async {
                 if (v == null) return;
                 final newSettings = g.copyWith(dailyTotalCap: v);
-                // ✅ 並行執行：寫入 Firestore 和重排同時進行
-                final writeFuture = repo.setGlobal(uid, newSettings);
-                final rescheduleFuture = PushOrchestrator.rescheduleNextDays(
-                  ref: ref,
-                  days: 3,
-                  overrideGlobal: newSettings,
-                );
-                await Future.wait([writeFuture, rescheduleFuture]);
+                try {
+                  // ✅ 並行執行：寫入 Firestore 和重排同時進行
+                  final writeFuture = repo.setGlobal(uid, newSettings);
+                  final rescheduleFuture = PushOrchestrator.rescheduleNextDays(
+                    ref: ref,
+                    days: 3,
+                    overrideGlobal: newSettings,
+                  );
+                  await Future.wait([writeFuture, rescheduleFuture]);
+                  // ignore: use_build_context_synchronously
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('每日上限已更新為 $v 則')),
+                    );
+                  }
+                } catch (e) {
+                  // ignore: use_build_context_synchronously
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('更新失敗: $e')),
+                    );
+                  }
+                }
               },
             ),
           ),
@@ -318,7 +339,7 @@ class PushCenterPage extends ConsumerWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
+                const Icon(
                   Icons.warning_amber_rounded,
                   color: Colors.amber,
                   size: 18,
@@ -377,9 +398,9 @@ class PushCenterPage extends ConsumerWidget {
               label: const Text('關閉勿擾'),
               onPressed: () async {
                 final next = g.copyWith(
-                  quietHours: TimeRange(
-                    const TimeOfDay(hour: 0, minute: 0),
-                    const TimeOfDay(hour: 0, minute: 0),
+                  quietHours: const TimeRange(
+                    TimeOfDay(hour: 0, minute: 0),
+                    TimeOfDay(hour: 0, minute: 0),
                   ),
                 );
                 // ✅ 並行執行：寫入 Firestore 和重排同時進行
@@ -421,7 +442,7 @@ class PushCenterPage extends ConsumerWidget {
         // 讓顏色不要太突兀（可留可不留）
         return Theme(
           data: Theme.of(context).copyWith(
-            dialogBackgroundColor: Theme.of(context).colorScheme.surface,
+            dialogTheme: DialogThemeData(backgroundColor: Theme.of(context).colorScheme.surface),
           ),
           child: child ?? const SizedBox.shrink(),
         );

@@ -9,7 +9,6 @@ import 'detail_page.dart';
 import 'widgets/bubble_card.dart';
 import '../../../theme/app_tokens.dart';
 import '../../widgets/rich_sections/user_learning_store.dart';
-import '../../../services/learning_progress_service.dart';
 
 class ProductLibraryPage extends ConsumerStatefulWidget {
   final String productId;
@@ -29,7 +28,7 @@ class ProductLibraryPage extends ConsumerStatefulWidget {
   ConsumerState<ProductLibraryPage> createState() => _ProductLibraryPageState();
 }
 
-class _ProductLibraryPageState extends ConsumerState<ProductLibraryPage> {
+class _ProductLibraryPageState extends ConsumerState<ProductLibraryPage> with WidgetsBindingObserver {
   final Map<String, GlobalKey> _itemKeys = {};
   bool _didJump = false;
   int _jumpAttempts = 0;
@@ -62,8 +61,25 @@ class _ProductLibraryPageState extends ConsumerState<ProductLibraryPage> {
   @override
   void initState() {
     super.initState();
+    // 監聽頁面生命週期，當頁面重新可見時刷新數據
+    WidgetsBinding.instance.addObserver(this);
     // 保底記錄：進入內容頁就記一次學習
     unawaited(UserLearningStore().markLearnedTodayAndGlobal(widget.productId));
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    // 當 app 從背景回到前景時，刷新 savedItemsProvider
+    if (state == AppLifecycleState.resumed) {
+      ref.invalidate(savedItemsProvider);
+    }
   }
 
   @override
@@ -143,11 +159,17 @@ class _ProductLibraryPageState extends ConsumerState<ProductLibraryPage> {
                         final original = Padding(
                           padding: const EdgeInsets.only(bottom: 10),
                           child: BubbleCard(
-                            onTap: () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                  builder: (_) =>
-                                      DetailPage(contentItemId: it.id)),
-                            ),
+                            onTap: () async {
+                              // ✅ 導航到 detail 頁面，並在返回時刷新數據
+                              await Navigator.of(context).push(
+                                MaterialPageRoute(
+                                    builder: (_) =>
+                                        DetailPage(contentItemId: it.id)),
+                              );
+                              // ✅ 從 detail 頁返回時，強制刷新 savedItemsProvider
+                              // 確保卡片顯示最新的狀態（learned/reviewLater/favorite）
+                              ref.invalidate(savedItemsProvider);
+                            },
                             child: _contentCard(context, ref, it, saved),
                           ),
                         );
@@ -189,15 +211,11 @@ class _ProductLibraryPageState extends ConsumerState<ProductLibraryPage> {
   }
 
   Widget _contentCard(BuildContext context, WidgetRef ref, ContentItem it, SavedContent? saved) {
-    // 檢查是否登入
-    String? uid;
     try {
-      uid = ref.read(uidProvider);
+      ref.read(uidProvider);
     } catch (_) {
       return const Center(child: Text('請先登入'));
     }
-
-    final repo = ref.read(libraryRepoProvider);
 
     String ellipsize(String s, int max) =>
         s.length <= max ? s : '${s.substring(0, max)}…';
@@ -238,7 +256,7 @@ class _ProductLibraryPageState extends ConsumerState<ProductLibraryPage> {
           overflow: TextOverflow.ellipsis,
         ),
         const SizedBox(height: 10),
-        // 操作按鈕（簡化為圖示按鈕）
+        // 操作按鈕：只顯示狀態，不可點擊
         Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
@@ -246,97 +264,21 @@ class _ProductLibraryPageState extends ConsumerState<ProductLibraryPage> {
               icon: Icon((saved?.learned ?? false)
                   ? Icons.check_circle
                   : Icons.check_circle_outline),
-              onPressed: () async {
-                try {
-                  // 獲取 product 和 topicId
-                  final productsMap = await ref.read(productsMapProvider.future);
-                  final product = productsMap[it.productId];
-                  if (product == null) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('無法獲取產品資訊')),
-                      );
-                    }
-                    return;
-                  }
-                  
-                  final progress = LearningProgressService();
-                  await progress.markLearnedAndAdvance(
-                    topicId: product.topicId,
-                    contentId: it.id,
-                    pushOrder: it.pushOrder,
-                    source: 'content_card',
-                  );
-                  
-                  // 刷新 savedItemsProvider
-                  ref.invalidate(savedItemsProvider);
-                  
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('已標記為完成')),
-                    );
-                  }
-                } catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('操作失敗: $e')),
-                    );
-                  }
-                }
-              },
-              tooltip: '完成',
+              onPressed: null,
+              tooltip: (saved?.learned ?? false) ? '已學習' : '待學習',
             ),
             IconButton(
               icon: Icon(
                   (saved?.favorite ?? false) ? Icons.star : Icons.star_border),
-              onPressed: () => repo.setSavedItem(
-                  uid!, it.id, {'favorite': !(saved?.favorite ?? false)}),
-              tooltip: '收藏',
+              onPressed: null,
+              tooltip: (saved?.favorite ?? false) ? '已收藏' : '未收藏',
             ),
             IconButton(
               icon: Icon((saved?.reviewLater ?? false)
                   ? Icons.schedule
                   : Icons.schedule_outlined),
-              onPressed: () async {
-                try {
-                  // 獲取 product 和 topicId
-                  final productsMap = await ref.read(productsMapProvider.future);
-                  final product = productsMap[it.productId];
-                  if (product == null) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('無法獲取產品資訊')),
-                      );
-                    }
-                    return;
-                  }
-                  
-                  final progress = LearningProgressService();
-                  await progress.snoozeContent(
-                    topicId: product.topicId,
-                    contentId: it.id,
-                    pushOrder: it.pushOrder,
-                    duration: const Duration(hours: 6),
-                    source: 'content_card',
-                  );
-                  
-                  // 刷新 savedItemsProvider
-                  ref.invalidate(savedItemsProvider);
-                  
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('已延後 6 小時')),
-                    );
-                  }
-                } catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('操作失敗: $e')),
-                    );
-                  }
-                }
-              },
-              tooltip: '稍候再學',
+              onPressed: null,
+              tooltip: (saved?.reviewLater ?? false) ? '已稍後再學' : '未稍後',
             ),
           ],
         ),

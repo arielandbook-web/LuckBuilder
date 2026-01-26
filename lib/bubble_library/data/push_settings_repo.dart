@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import '../models/global_push_settings.dart';
 import 'firestore_paths.dart';
 
@@ -18,8 +19,25 @@ class PushSettingsRepo {
   }
 
   Future<void> setGlobal(String uid, GlobalPushSettings s) async {
-    await _db
-        .doc(FirestorePaths.userGlobalPush(uid))
-        .set(s.toMap(), SetOptions(merge: true));
+    final path = FirestorePaths.userGlobalPush(uid);
+    final data = s.toMap();
+    
+    if (kDebugMode) {
+      debugPrint('📝 setGlobal: path=$path');
+      debugPrint('📝 setGlobal: data=$data');
+    }
+    
+    try {
+      await _db.doc(path).set(data, SetOptions(merge: true));
+      if (kDebugMode) {
+        debugPrint('✅ setGlobal: 寫入成功');
+      }
+    } catch (e, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('❌ setGlobal: 寫入失敗 - $e');
+        debugPrint('Stack trace: $stackTrace');
+      }
+      rethrow;
+    }
   }
 }

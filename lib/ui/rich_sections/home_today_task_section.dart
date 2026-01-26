@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,14 +7,118 @@ import '../../widgets/app_card.dart';
 
 import '../../bubble_library/notifications/scheduled_push_cache.dart';
 import '../../bubble_library/providers/providers.dart';
-import '../../bubble_library/notifications/notification_service.dart';
 import '../../notifications/push_timeline_provider.dart';
 
 import '../../widgets/rich_sections/user_learning_store.dart';
 import '../../bubble_library/ui/product_library_page.dart';
 import '../../notifications/notification_inbox_store.dart';
 
-class HomeTodayTaskSection extends ConsumerWidget {
+/// 今日推播統計（總數、已完成數、下一則）
+class TodayPushStats {
+  final int totalScheduled; // 今日排程總數（從推播設定計算）
+  final int completed; // 今日已完成數（= 總數 - 剩餘數）
+  final int remaining; // 今日剩餘數（從 scheduledCacheProvider）
+  final ScheduledPushEntry? nextEntry; // 下一則推播
+
+  const TodayPushStats({
+    required this.totalScheduled,
+    required this.completed,
+    required this.remaining,
+    this.nextEntry,
+  });
+}
+
+/// 今日推播統計 provider
+/// ✅ 使用 upcomingTimelineProvider（推播中心的未來三天時間表）
+final _todayPushStatsProvider = FutureProvider<TodayPushStats>((ref) async {
+  // 監聽 upcomingTimelineProvider（推播中心的數據源）
+  final tasks = await ref.watch(upcomingTimelineProvider.future);
+  
+  final now = DateTime.now();
+  final todayWeekday = now.weekday; // 1=Mon, 7=Sun
+  final today0 = DateTime(now.year, now.month, now.day);
+  final tomorrow0 = today0.add(const Duration(days: 1));
+  
+  int totalFreqToday = 0;
+  
+  try {
+    // 1. 從推播設定計算今日應推播數（分母）
+    final lib = await ref.read(libraryProductsProvider.future);
+    final global = await ref.read(globalPushSettingsProvider.future);
+    
+    if (global.enabled) {
+      for (final lp in lib) {
+        if (!lp.pushEnabled || lp.isHidden) continue;
+        
+        // 檢查今天是否在該產品的推播日
+        final cfg = lp.pushConfig;
+        if (cfg.daysOfWeek.contains(todayWeekday)) {
+          totalFreqToday += cfg.freqPerDay;
+        }
+      }
+      
+      // 套用全域每日上限
+      totalFreqToday = totalFreqToday.clamp(0, global.dailyTotalCap);
+    }
+  } catch (_) {
+    // 忽略錯誤，使用預設值
+  }
+
+  // 2. 從 upcomingTimelineProvider 計算今日剩餘數和下一則
+  final todayRemaining = tasks.where((t) =>
+      t.when.isAfter(now) && t.when.isBefore(tomorrow0)).toList()
+    ..sort((a, b) => a.when.compareTo(b.when));
+  
+  final remaining = todayRemaining.length;
+  
+  // 3. 轉換下一則 PushTask 為 ScheduledPushEntry
+  ScheduledPushEntry? nextEntry;
+  if (todayRemaining.isNotEmpty) {
+    try {
+      final task = todayRemaining.first;
+      final productsMap = await ref.read(productsMapProvider.future);
+      final product = productsMap[task.productId];
+      final productTitle = product?.title ?? task.productId;
+      
+      final title = task.item.anchorGroup.isNotEmpty
+          ? task.item.anchorGroup
+          : productTitle;
+      final subtitle =
+          'L1｜${task.item.intent}｜◆${task.item.difficulty}｜${task.item.pushOrder}/365';
+      final body = '$subtitle\n${task.item.content}';
+      
+      final payload = {
+        'type': 'bubble',
+        'productId': task.productId,
+        'contentItemId': task.item.id,
+        'topicId': product?.topicId ?? '',
+        'contentId': task.item.id,
+        'pushOrder': task.item.pushOrder,
+      };
+      
+      nextEntry = ScheduledPushEntry(
+        when: task.when,
+        title: title,
+        body: body,
+        payload: payload,
+      );
+    } catch (_) {
+      // 轉換失敗時 nextEntry 保持為 null
+    }
+  }
+  
+  // 4. 已完成數 = 總數 - 剩餘數（用扣的）
+  final completed = (totalFreqToday - remaining).clamp(0, totalFreqToday);
+
+  return TodayPushStats(
+    totalScheduled: totalFreqToday,
+    completed: completed,
+    remaining: remaining,
+    nextEntry: nextEntry,
+  );
+});
+
+class HomeTodayTaskSection extends ConsumerStatefulWidget {
   final int dailyLimit; // 保留向後相容
 
   const HomeTodayTaskSection({
@@ -22,7 +127,30 @@ class HomeTodayTaskSection extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeTodayTaskSection> createState() =>
+      _HomeTodayTaskSectionState();
+}
+
+class _HomeTodayTaskSectionState extends ConsumerState<HomeTodayTaskSection> {
+  Timer? _countdownTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    // 每 30 秒刷新一次倒數時間（避免過於頻繁）
+    _countdownTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _countdownTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final tokens = context.tokens;
 
     // 未登入：提示（避免 uidProvider throw）
@@ -38,8 +166,7 @@ class HomeTodayTaskSection extends ConsumerWidget {
     }
 
     final globalAsync = ref.watch(globalPushSettingsProvider);
-    final upcomingAsync = ref.watch(scheduledCacheProvider);
-    final learnedTodayAsync = ref.watch(_globalLearnedTodayProvider);
+    final todayStatsAsync = ref.watch(_todayPushStatsProvider);
 
     return AppCard(
       child: Column(
@@ -53,54 +180,60 @@ class HomeTodayTaskSection extends ConsumerWidget {
           const SizedBox(height: 10),
           globalAsync.when(
             data: (g) {
-              final cap = g.dailyTotalCap;
+              return todayStatsAsync.when(
+                data: (stats) {
+                  // ✅ 直接使用 _todayPushStatsProvider 的統計數據
+                  final actualScheduled = stats.totalScheduled;
+                  final actualPushed = stats.completed;
+                  final nextEntry = stats.nextEntry;
+                  // 分子等於分母才標示「今日已完成」，否則不標註
+                  final isCompleted = actualScheduled > 0 &&
+                      actualPushed == actualScheduled;
 
-              return upcomingAsync.when(
-                data: (list) {
-                  // 今日推播（依 when 是今天）
-                  final now = DateTime.now();
-                  final today0 = DateTime(now.year, now.month, now.day);
-                  final tomorrow0 = today0.add(const Duration(days: 1));
+                  final progress = (actualScheduled <= 0)
+                      ? 0.0
+                      : (actualPushed / actualScheduled).clamp(0.0, 1.0);
 
-                  final todayList = list
-                      .where((e) =>
-                          e.when.isAfter(today0) && e.when.isBefore(tomorrow0))
-                      .toList()
-                    ..sort((a, b) => a.when.compareTo(b.when));
+                  final nextText =
+                      nextEntry == null ? '今天沒有更多推播' : _nextLine(nextEntry);
 
-                  final nextEntry = todayList
-                      .where((e) => e.when.isAfter(now))
-                      .cast<ScheduledPushEntry?>()
-                      .firstWhere((_) => true, orElse: () => null);
+                  final countdownText =
+                      nextEntry == null ? '' : _countdown(nextEntry.when);
 
-                  return learnedTodayAsync.when(
-                    data: (done) {
-                      // 已收到：用「今天已學」作為最小可用版（更穩）
-                      final received = done ? 1 : 0;
-
-                      final progress =
-                          (cap <= 0) ? 0.0 : (received / cap).clamp(0.0, 1.0);
-
-                      final nextText =
-                          nextEntry == null ? '今天沒有更多推播' : _nextLine(nextEntry);
-
-                      final countdownText =
-                          nextEntry == null ? '' : _countdown(nextEntry.when);
-
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 進度條
+                      Row(
                         children: [
-                          // 進度條
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  '今日推播：$received / $cap',
-                                  style: TextStyle(
-                                      color: tokens.textSecondary,
-                                      fontWeight: FontWeight.w700),
+                          Expanded(
+                            child: Text(
+                              '今日推播：$actualPushed / $actualScheduled',
+                              style: TextStyle(
+                                  color: tokens.textSecondary,
+                                  fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                          if (isCompleted)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(999),
+                                color: Colors.green.withValues(alpha: 0.25),
+                                border: Border.all(
+                                    color:
+                                        Colors.white.withValues(alpha: 0.12)),
+                              ),
+                              child: Text(
+                                '今日已完成 ✅',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
                                 ),
                               ),
+<<<<<<< HEAD
                               Container(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 10, vertical: 6),
@@ -111,18 +244,9 @@ class HomeTodayTaskSection extends ConsumerWidget {
                                       : tokens.cardBorder.withValues(alpha: 0.2),
                                   border: Border.all(
                                       color: tokens.cardBorder.withValues(alpha: 0.5)),
-                                ),
-                                child: Text(
-                                  done ? '今日已完成 ✅' : '尚未完成',
-                                  style: TextStyle(
-                                    color: tokens.textPrimary,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
+                            ),
+                        ],
+                      ),
                           const SizedBox(height: 8),
                           ClipRRect(
                             borderRadius: BorderRadius.circular(999),
@@ -153,11 +277,12 @@ class HomeTodayTaskSection extends ConsumerWidget {
                             ),
                           ],
 
-                          const SizedBox(height: 12),
+                              const SizedBox(height: 12),
+>>>>>>> origin/feature/embed-rich-sections
 
-                          Row(
-                            children: [
-                              Expanded(
+                              // 立即學 1 則按鈕靠右對齊
+                              Align(
+                                alignment: Alignment.centerRight,
                                 child: ElevatedButton(
                                   onPressed: nextEntry == null
                                       ? null
@@ -176,8 +301,6 @@ class HomeTodayTaskSection extends ConsumerWidget {
                                           // 記錄今日完成（全域）
                                           await UserLearningStore()
                                               .markGlobalLearnedToday();
-                                          ref.invalidate(
-                                              _globalLearnedTodayProvider);
 
                                           // 標記推播為已開啟
                                           if (pid.isNotEmpty && cid.isNotEmpty) {
@@ -189,6 +312,9 @@ class HomeTodayTaskSection extends ConsumerWidget {
                                               contentItemId: cid,
                                             );
                                           }
+
+                                          // ✅ 刷新今日推播統計
+                                          ref.invalidate(_todayPushStatsProvider);
 
                                           // 進頁
                                           // ignore: use_build_context_synchronously
@@ -205,39 +331,15 @@ class HomeTodayTaskSection extends ConsumerWidget {
                                   child: const Text('立即學 1 則'),
                                 ),
                               ),
-                              const SizedBox(width: 10),
-                              OutlinedButton(
-                                onPressed: nextEntry == null
-                                    ? null
-                                    : () async {
-                                        await _scheduleRemindLater(nextEntry);
-                                        if (context.mounted) {
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                            const SnackBar(
-                                                content:
-                                                    Text('已設定 15 分鐘後提醒（本機）')),
-                                          );
-                                        }
-                                      },
-                                child: const Text('稍後提醒'),
-                              ),
-                            ],
-                          ),
-                        ],
-                      );
-                    },
-                    loading: () =>
-                        const Center(child: CircularProgressIndicator()),
-                    error: (e, _) => Text('learned error: $e',
-                        style: TextStyle(color: tokens.textSecondary)),
+                    ],
                   );
                 },
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, _) => Text('schedule error: $e',
-                    style: TextStyle(color: tokens.textSecondary)),
-              );
-            },
+              loading: () =>
+                  const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Text('stats error: $e',
+                  style: TextStyle(color: tokens.textSecondary)),
+            );
+          },
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (e, _) => Text('global error: $e',
                 style: TextStyle(color: tokens.textSecondary)),
@@ -267,29 +369,4 @@ class HomeTodayTaskSection extends ConsumerWidget {
     return '倒數：${s}s';
   }
 
-  static Future<void> _scheduleRemindLater(ScheduledPushEntry e) async {
-    final ns = NotificationService();
-    final when = DateTime.now().add(const Duration(minutes: 15));
-
-    // payload：沿用 bubble payload
-    final payload = Map<String, dynamic>.from(e.payload);
-    payload['type'] = 'remind_later';
-
-    const title = '提醒你學一下';
-    final body = e.title.isNotEmpty ? e.title : '回來學 1 則';
-
-    final id = DateTime.now().millisecondsSinceEpoch.remainder(1000000);
-
-    await ns.schedule(
-      id: id,
-      when: when,
-      title: title,
-      body: body,
-      payload: payload,
-    );
-  }
 }
-
-final _globalLearnedTodayProvider = FutureProvider<bool>((ref) async {
-  return UserLearningStore().globalLearnedToday();
-});

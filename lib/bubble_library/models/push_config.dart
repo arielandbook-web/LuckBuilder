@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 enum PushTimeMode { preset, custom }
 
@@ -77,18 +78,35 @@ class PushConfig {
     final tm = (m['timeMode'] ?? 'preset') as String;
     final cm = (m['contentMode'] ?? 'seq') as String;
 
-    final customTimes = (m['customTimes'] as List<dynamic>? ?? [])
+    final customTimesRaw = m['customTimes'] as List<dynamic>? ?? [];
+    final customTimes = customTimesRaw
         .whereType<Map>()
         .map((x) => TimeOfDay(
               hour: ((x['h'] ?? 21) as num).toInt(),
               minute: ((x['m'] ?? 40) as num).toInt(),
             ))
         .toList();
+    
+    final timeMode = PushTimeMode.values
+        .firstWhere((e) => e.name == tm, orElse: () => PushTimeMode.preset);
+    
+    // 調試：確認解析結果
+    if (kDebugMode && timeMode == PushTimeMode.custom) {
+      final customTimesStr = customTimes
+          .map((t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}')
+          .join(', ');
+      debugPrint('📖 PushConfig.fromMap: 解析自訂時間模式');
+      debugPrint('   - timeMode: $tm → $timeMode');
+      debugPrint('   - customTimes 原始數據: $customTimesRaw');
+      debugPrint('   - customTimes 解析結果: [$customTimesStr] (數量: ${customTimes.length})');
+      if (customTimes.isEmpty && timeMode == PushTimeMode.custom) {
+        debugPrint('   ⚠️ 警告：timeMode 為 custom 但 customTimes 為空！');
+      }
+    }
 
     return PushConfig(
       freqPerDay: ((m['freqPerDay'] ?? 1) as num).toInt().clamp(1, 5),
-      timeMode: PushTimeMode.values
-          .firstWhere((e) => e.name == tm, orElse: () => PushTimeMode.preset),
+      timeMode: timeMode,
       presetSlots: (m['presetSlots'] as List<dynamic>? ?? ['night'])
           .map((e) => e.toString())
           .toList(),

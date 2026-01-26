@@ -8,7 +8,8 @@ import '../models/content_item.dart';
 import '../models/user_library.dart';
 import 'widgets/bubble_card.dart';
 import '../../../theme/app_tokens.dart';
-import '../../../services/learning_progress_service.dart';
+import '../notifications/bubble_action_handler.dart';
+import '../../notifications/favorite_sentences_store.dart';
 
 class DetailPage extends ConsumerWidget {
   final String contentItemId;
@@ -136,8 +137,39 @@ class DetailPage extends ConsumerWidget {
                               icon: Icon((saved?.favorite ?? false)
                                   ? Icons.star
                                   : Icons.star_border),
-                              onPressed: () => repo.setSavedItem(uid!, item.id,
-                                  {'favorite': !(saved?.favorite ?? false)}),
+                              onPressed: () async {
+                                final newFavoriteState = !(saved?.favorite ?? false);
+                                
+                                // 更新 Firestore 的 favorite 欄位
+                                await repo.setSavedItem(uid!, item.id,
+                                    {'favorite': newFavoriteState});
+                                
+                                // 同時更新本地收藏的「今日一句」
+                                if (newFavoriteState) {
+                                  // 收藏：獲取產品名稱並保存到本地
+                                  final productsMap = await ref.read(productsMapProvider.future);
+                                  final product = productsMap[item.productId];
+                                  final productName = product?.title ?? '未知產品';
+                                  
+                                  await FavoriteSentencesStore.add(
+                                    uid,
+                                    FavoriteSentence(
+                                      contentItemId: item.id,
+                                      productId: item.productId,
+                                      productName: productName,
+                                      anchorGroup: item.anchorGroup,
+                                      anchor: item.anchor,
+                                      content: item.content,
+                                      favoritedAt: DateTime.now(),
+                                    ),
+                                  );
+                                } else {
+                                  // 取消收藏：從本地移除
+                                  await FavoriteSentencesStore.remove(uid, item.id);
+                                }
+                                
+                                ref.invalidate(savedItemsProvider);
+                              },
                             ),
                           ],
                         ),
@@ -146,7 +178,6 @@ class DetailPage extends ConsumerWidget {
                   ),
                   const SizedBox(height: 12),
 
-                  // 操作按鈕：完成和稍候再學
                   Row(
                     children: [
                       Expanded(
@@ -163,6 +194,7 @@ class DetailPage extends ConsumerWidget {
                               }
                               return;
                             }
+<<<<<<< HEAD
                             
                             final progress = LearningProgressService();
                             try {
@@ -181,13 +213,6 @@ class DetailPage extends ConsumerWidget {
                                   const SnackBar(content: Text('已標記為完成')),
                                 );
                               }
-                            } catch (e) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('操作失敗: $e')),
-                                );
-                              }
-                            }
                           },
                           icon: const Icon(Icons.check),
                           label: const Text('完成'),
@@ -208,6 +233,7 @@ class DetailPage extends ConsumerWidget {
                               }
                               return;
                             }
+<<<<<<< HEAD
                             
                             final progress = LearningProgressService();
                             try {

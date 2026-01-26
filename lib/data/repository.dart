@@ -29,6 +29,10 @@ class F {
 }
 
 /// V1 Repository
+/// 
+/// ⚠️ 已廢棄：此 Repository 已不再使用，請改用 V2Repository
+/// 保留此類別僅供參考，未來可能會被移除
+@Deprecated('請改用 V2Repository')
 class DataRepository {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
@@ -421,6 +425,63 @@ class V2Repository {
           .toList();
     } catch (e) {
       debugPrint('Error searching products: $e');
+      return [];
+    }
+  }
+
+  // 獲取所有已發布產品 Map
+  Future<Map<String, Product>> fetchAllProductsMap() async {
+    try {
+      final snapshot = await _firestore
+          .collection(Col.products)
+          .where(F.published, isEqualTo: true)
+          .get();
+
+      final map = <String, Product>{};
+      for (final doc in snapshot.docs) {
+        map[doc.id] = Product.fromDoc(doc.id, doc.data());
+      }
+      return map;
+    } catch (e) {
+      debugPrint('Error fetching all products map: $e');
+      return {};
+    }
+  }
+
+  // 獲取新上架產品（已上架：按 order 倒序）
+  Future<List<Product>> fetchNewArrivals({int limit = 12}) async {
+    try {
+      final snapshot = await _firestore
+          .collection(Col.products)
+          .where(F.published, isEqualTo: true)
+          .orderBy(F.order, descending: true)
+          .limit(limit)
+          .get();
+
+      return snapshot.docs
+          .map((doc) => Product.fromDoc(doc.id, doc.data()))
+          .toList();
+    } catch (e) {
+      debugPrint('Error fetching new arrivals: $e');
+      return [];
+    }
+  }
+
+  // 獲取即將上架產品（未上架：按 order 倒序）
+  Future<List<Product>> fetchUpcomingProducts({int limit = 8}) async {
+    try {
+      final snapshot = await _firestore
+          .collection(Col.products)
+          .where(F.published, isEqualTo: false)
+          .orderBy(F.order, descending: true)
+          .limit(limit)
+          .get();
+
+      return snapshot.docs
+          .map((doc) => Product.fromDoc(doc.id, doc.data()))
+          .toList();
+    } catch (e) {
+      debugPrint('Error fetching upcoming products: $e');
       return [];
     }
   }
