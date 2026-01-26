@@ -49,7 +49,18 @@ class _ProductPageState extends ConsumerState<ProductPage> {
               return IconButton(
                 tooltip: isWish ? '取消收藏' : '加入收藏',
                 icon: Icon(isWish ? Icons.bookmark : Icons.bookmark_outline),
-                onPressed: () => ref.read(localWishlistNotifierProvider).toggleCollect(widget.productId),
+                onPressed: () async {
+                  await ref.read(localWishlistNotifierProvider).toggleCollect(widget.productId);
+                  // ✅ 添加操作反馈
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(isWish ? '已從收藏移除' : '已加入收藏'),
+                        duration: const Duration(seconds: 1),
+                      ),
+                    );
+                  }
+                },
               );
             },
             loading: () => const SizedBox.shrink(),
@@ -116,9 +127,9 @@ class _ProductPageState extends ConsumerState<ProductPage> {
                                   horizontal: 12, vertical: 8),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(999),
-                                color: Colors.white.withValues(alpha: 0.10),
+                                color: tokens.cardBorder.withValues(alpha: 0.3),
                                 border: Border.all(
-                                    color: Colors.white.withValues(alpha: 0.14)),
+                                    color: tokens.cardBorder),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -128,7 +139,7 @@ class _ProductPageState extends ConsumerState<ProductPage> {
                                   Text(
                                     '即將上架：目前不可購買',
                                     style: TextStyle(
-                                      color: Colors.white.withValues(alpha: 0.9),
+                                      color: tokens.textPrimary,
                                       fontWeight: FontWeight.w800,
                                     ),
                                   ),
@@ -232,10 +243,23 @@ class _ProductPageState extends ConsumerState<ProductPage> {
                     }
                     if (uid != null) {
                       final repo = ref.read(libraryRepoProvider);
+                      
+                      // 1. 将产品加入已购买库
                       await repo.ensureLibraryProductExists(
                         uid: uid,
                         productId: widget.productId,
                       );
+                      
+                      // ✅ 2. 从愿望清单移除（如果存在）
+                      final wishlist = await ref.read(wishlistProvider.future);
+                      if (wishlist.any((w) => w.productId == widget.productId)) {
+                        await ref.read(localWishlistNotifierProvider).remove(widget.productId);
+                      }
+                      
+                      // ✅ 3. 刷新相关 UI
+                      ref.invalidate(libraryProductsProvider);
+                      ref.invalidate(wishlistProvider);
+                      
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('已解鎖，可啟用橫幅推播')),

@@ -178,8 +178,8 @@ class _ContinueCard extends StatelessWidget {
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(tokens.cardRadius),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
-          color: Colors.white.withValues(alpha: 0.06),
+          border: Border.all(color: tokens.cardBorder.withValues(alpha: 0.5)),
+          color: tokens.cardBg.withValues(alpha: 0.3),
         ),
         child: Row(
           children: [

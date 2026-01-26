@@ -12,6 +12,7 @@ import 'notification_inbox_store.dart';
 import 'timeline_meta_mode.dart';
 import 'widgets/timeline_widgets.dart';
 import 'widgets/push_hint.dart';
+import '../theme/app_tokens.dart';
 
 class PushTimelineList extends ConsumerWidget {
   final bool showTopBar; // Sheet 用 false, Page 用 true
@@ -29,6 +30,7 @@ class PushTimelineList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final tokens = context.tokens;
     String uid;
     try {
       uid = ref.read(uidProvider);
@@ -110,7 +112,7 @@ class PushTimelineList extends ConsumerWidget {
               width: 44,
               height: 5,
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.25),
+                color: tokens.cardBorder,
                 borderRadius: BorderRadius.circular(999),
               ),
             ),
@@ -222,14 +224,14 @@ class PushTimelineList extends ConsumerWidget {
                                               ? Icons.notifications_paused
                                               : Icons.schedule_outlined,
                                           size: 64,
-                                          color: Colors.white.withValues(alpha: 0.5),
+                                          color: tokens.textSecondary,
                                         ),
                                         const SizedBox(height: 16),
                                         Text(
                                           emptyMessage,
                                           textAlign: TextAlign.center,
                                           style: TextStyle(
-                                            color: Colors.white.withValues(alpha: 0.8),
+                                            color: tokens.textPrimary,
                                             fontSize: 14,
                                           ),
                                         ),
@@ -290,7 +292,7 @@ class PushTimelineList extends ConsumerWidget {
                                       r.dayKey ?? '',
                                       style: TextStyle(
                                         fontWeight: FontWeight.w800,
-                                        color: Colors.white.withValues(alpha: 0.75),
+                                        color: tokens.textSecondary,
                                         fontSize: 12,
                                       ),
                                     ),
@@ -302,7 +304,7 @@ class PushTimelineList extends ConsumerWidget {
                                       r.dayKey ?? '',
                                       style: TextStyle(
                                         fontWeight: FontWeight.w900,
-                                        color: Colors.white.withValues(alpha: 0.85),
+                                        color: tokens.textPrimary,
                                       ),
                                     ),
                                   );

@@ -145,4 +145,48 @@ class LibraryRepo {
       'isFavorite': false,
     });
   }
+
+  /// 通用方法：更新 library_products 的任意字段
+  Future<void> setLibraryItem(
+      String uid, String productId, Map<String, dynamic> patch) async {
+    await _db
+        .collection(FirestorePaths.userLibraryProducts(uid))
+        .doc(productId)
+        .set(patch, SetOptions(merge: true));
+  }
+
+  /// 重置商品進度：清除所有已學習狀態，重新開始
+  Future<void> resetProductProgress({
+    required String uid,
+    required String productId,
+    required List<String> contentItemIds,
+  }) async {
+    final batch = _db.batch();
+
+    // 清除所有 saved_items 的 learned 狀態
+    for (final contentItemId in contentItemIds) {
+      final docRef = _db
+          .collection(FirestorePaths.userSavedItems(uid))
+          .doc(contentItemId);
+      batch.set(docRef, {
+        'learned': false,
+        'learnedAt': null,
+      }, SetOptions(merge: true));
+    }
+
+    // 重置 library_products 的進度
+    final productRef = _db
+        .collection(FirestorePaths.userLibraryProducts(uid))
+        .doc(productId);
+    batch.set(productRef, {
+      'progress': {
+        'nextSeq': 1,
+        'learnedCount': 0,
+      },
+      'completedAt': null, // 清除完成標記
+      'pushEnabled': true, // 重新啟用推播
+    }, SetOptions(merge: true));
+
+    await batch.commit();
+  }
 }

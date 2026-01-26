@@ -38,8 +38,6 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
   LibraryView currentView = LibraryView.purchased;
   DateTime? _lastRescheduleTime;
   
-  // ✅ 階段 4：搜尋/篩選狀態
-  final TextEditingController _searchController = TextEditingController();
   Set<String> _selectedProductIds = {};
   int _selectedHistoryTab = 0; // 0 = 待學習, 1 = 已學習
 
@@ -184,7 +182,7 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
         return _buildPurchasedTab(
             context, visibleLib, productsMap, scheduled);
       case LibraryView.wishlist:
-        return _buildWishlistTab(context, wishItems, productsMap);
+        return _buildWishlistTab(context, wishItems, productsMap, visibleLib);
       case LibraryView.favorites:
         return _buildFavoritesTab(context, visibleLib, wishItems, productsMap);
       case LibraryView.history:
@@ -225,18 +223,20 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
       return day == null ? '下一則：${e.title}' : '下一則：${e.title}（Day $day）';
     }
 
+    final tokens = context.tokens;
+
     if (visibleLib.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(Icons.inventory_2_outlined,
-                size: 64, color: Colors.white.withValues(alpha: 0.5)),
+                size: 64, color: tokens.textSecondary.withValues(alpha: 0.5)),
             const SizedBox(height: 16),
             Text(
               '目前沒有已購買的商品',
               style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.8), fontSize: 16),
+                  color: tokens.textPrimary, fontSize: 16),
             ),
           ],
         ),
@@ -350,9 +350,21 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
     BuildContext context,
     List<WishlistItem> wishItems,
     Map<String, Product> productsMap,
+    List<UserLibraryProduct> visibleLib,
   ) {
+    final tokens = context.tokens;
+    
+    // ✅ 获取已购买的产品ID集合
+    final purchasedProductIds = visibleLib
+        .map((lp) => lp.productId)
+        .toSet();
+    
+    // ✅ 过滤：只显示未购买的产品
     final visibleWish = <WishlistItem>[
-      ...wishItems.where((e) => productsMap.containsKey(e.productId))
+      ...wishItems.where((e) => 
+        productsMap.containsKey(e.productId) && 
+        !purchasedProductIds.contains(e.productId) // ✅ 排除已购买
+      )
     ]..sort((a, b) => b.addedAt.compareTo(a.addedAt));
 
     if (visibleWish.isEmpty) {
@@ -361,18 +373,18 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(Icons.bookmark_border,
-                size: 64, color: Colors.white.withValues(alpha: 0.5)),
+                size: 64, color: tokens.textSecondary.withValues(alpha: 0.5)),
             const SizedBox(height: 16),
             Text(
               '目前沒有未購買收藏',
               style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.8), fontSize: 16),
+                  color: tokens.textPrimary, fontSize: 16),
             ),
             const SizedBox(height: 8),
             Text(
               '到商品頁點「收藏」即可加入',
               style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.6), fontSize: 14),
+                  color: tokens.textSecondary, fontSize: 14),
             ),
           ],
         ),
@@ -393,13 +405,13 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(999),
-              color: Colors.white.withValues(alpha: 0.1),
+              color: tokens.chipBg,
               border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.2)),
+                  color: tokens.cardBorder),
             ),
             child: Text(label,
                 style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.8),
+                    color: tokens.textPrimary,
                     fontSize: 11,
                     fontWeight: FontWeight.w600)),
           );
@@ -497,6 +509,7 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
     List<WishlistItem> visibleWish,
     Map<String, Product> productsMap,
   ) {
+    final tokens = context.tokens;
     final favPids = <String>{};
     for (final lp in visibleLib) {
       if (lp.isFavorite) favPids.add(lp.productId);
@@ -513,18 +526,18 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(Icons.star_border,
-                size: 64, color: Colors.white.withValues(alpha: 0.5)),
+                size: 64, color: tokens.textSecondary.withValues(alpha: 0.5)),
             const SizedBox(height: 16),
             Text(
               '目前沒有最愛',
               style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.8), fontSize: 16),
+                  color: tokens.textPrimary, fontSize: 16),
             ),
             const SizedBox(height: 8),
             Text(
               '點擊商品旁的 ⭐ 按鈕來加入最愛',
               style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.6), fontSize: 14),
+                  color: tokens.textSecondary, fontSize: 14),
             ),
           ],
         ),
@@ -557,7 +570,7 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
                       style: const TextStyle(
                           fontSize: 16, fontWeight: FontWeight.w700))),
               Text(isPurchased ? '已購買' : '未購買',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.7))),
+                  style: TextStyle(color: tokens.textSecondary)),
             ],
           ),
         );
@@ -577,7 +590,7 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
             // 先批次載入所有 ContentItem
             final allContentIds = savedMap.keys.toList();
             if (allContentIds.isEmpty) {
-              return _buildEmptyHistory();
+              return _buildEmptyHistory(context);
             }
 
             return FutureBuilder<Map<String, ContentItem>>(
@@ -624,24 +637,9 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
                     return titleA.compareTo(titleB);
                   });
 
-                // ✅ 階段 4：應用搜尋/篩選
-                final searchQuery = _searchController.text.trim();
+                // 應用產品篩選
                 final filteredProducts = sortedProducts.where((productId) {
-                  if (!_matchesFilter(productId)) return false;
-                  if (searchQuery.isEmpty) return true;
-                  
-                  final group = groupedByProduct[productId]!;
-                  final allContentIds = [
-                    ...group['toLearn']!,
-                    ...group['learned']!,
-                  ];
-                  
-                  return allContentIds.any((contentId) {
-                    final contentItem = contentItemsMap[contentId];
-                    if (contentItem == null) return false;
-                    final product = productsMap[productId];
-                    return _matchesSearch(searchQuery, contentItem, product);
-                  });
+                  return _matchesFilter(productId);
                 }).toList();
 
                 return _buildHistoryContentGrouped(
@@ -650,7 +648,6 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
                   groupedByProduct,
                   contentItemsMap,
                   productsMap,
-                  searchQuery,
                   _selectedHistoryTab == 0, // showToLearn: true = 待學習, false = 已學習
                 );
               },
@@ -685,24 +682,25 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
     };
   }
 
-  Widget _buildEmptyHistory() {
+  Widget _buildEmptyHistory(BuildContext context) {
+    final tokens = context.tokens;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(Icons.history_edu,
-              size: 64, color: Colors.white.withValues(alpha: 0.5)),
+              size: 64, color: tokens.textSecondary.withValues(alpha: 0.5)),
           const SizedBox(height: 16),
           Text(
             '目前沒有學習歷史',
             style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.8), fontSize: 16),
+                color: tokens.textPrimary, fontSize: 16),
           ),
           const SizedBox(height: 8),
           Text(
             '開始學習內容後，記錄會顯示在這裡',
             style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.6), fontSize: 14),
+                color: tokens.textSecondary, fontSize: 14),
           ),
         ],
       ),
@@ -716,9 +714,9 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
     Map<String, Map<String, List<String>>> groupedByProduct,
     Map<String, ContentItem> contentItemsMap,
     Map<String, Product> productsMap,
-    String searchQuery,
     bool showToLearn,
   ) {
+    final tokens = context.tokens;
     // 建立扁平化列表：用於 ListView.builder
     final flatItems = <_HistoryListItem>[];
     
@@ -728,15 +726,7 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
           .where((pid) => groupedByProduct[pid]!['toLearn']!.isNotEmpty)
           .toList();
       for (final productId in toLearnProducts) {
-        final toLearnIds = groupedByProduct[productId]!['toLearn']!
-            .where((contentId) {
-              if (searchQuery.isEmpty) return true;
-              final contentItem = contentItemsMap[contentId];
-              if (contentItem == null) return false;
-              final product = productsMap[productId];
-              return _matchesSearch(searchQuery, contentItem, product);
-            })
-            .toList();
+        final toLearnIds = groupedByProduct[productId]!['toLearn']!;
         final learnedIds = groupedByProduct[productId]!['learned']!;
         
         if (toLearnIds.isNotEmpty || learnedIds.isNotEmpty) {
@@ -754,15 +744,7 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
           .toList();
       for (final productId in learnedProducts) {
         final toLearnIds = groupedByProduct[productId]!['toLearn']!;
-        final learnedIds = groupedByProduct[productId]!['learned']!
-            .where((contentId) {
-              if (searchQuery.isEmpty) return true;
-              final contentItem = contentItemsMap[contentId];
-              if (contentItem == null) return false;
-              final product = productsMap[productId];
-              return _matchesSearch(searchQuery, contentItem, product);
-            })
-            .toList();
+        final learnedIds = groupedByProduct[productId]!['learned']!;
         
         if (toLearnIds.isNotEmpty || learnedIds.isNotEmpty) {
           flatItems.add(_HistoryListItem.productHeader(
@@ -783,13 +765,13 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
           child: flatItems.isEmpty
               ? Center(
                   child: Text(
-                    searchQuery.isNotEmpty || _selectedProductIds.isNotEmpty
+                    _selectedProductIds.isNotEmpty
                         ? '沒有符合條件的內容'
                         : showToLearn
                             ? '目前沒有待學習的內容'
                             : '目前沒有已學習的內容',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.8),
+                      color: tokens.textPrimary,
                       fontSize: 16,
                     ),
                   ),
@@ -810,7 +792,6 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
               contentItemsMap,
               productsMap,
               showToLearn,
-              searchQuery,
             );
           case _HistoryItemType.content:
           case _HistoryItemType.sectionHeader:
@@ -874,39 +855,11 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
       data: (productsMap) {
         return savedAsync.when(
           data: (savedMap) {
-            // 從 savedMap 推導產品列表（需要載入 ContentItem）
-            // 注意：完整實作需要載入所有 ContentItem 才能知道有哪些產品
-            // 這裡先顯示搜尋框，產品篩選功能可後續擴展
             return Container(
               padding: const EdgeInsets.all(12),
               color: Colors.transparent,
               child: Column(
                 children: [
-                  // 搜尋框
-                  TextField(
-                    controller: _searchController,
-                    decoration: InputDecoration(
-                      hintText: '搜尋內容標題或產品名稱...',
-                      prefixIcon: const Icon(Icons.search),
-                      suffixIcon: _searchController.text.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear),
-                              onPressed: () {
-                                _searchController.clear();
-                                setState(() {});
-                              },
-                            )
-                          : null,
-                      filled: true,
-                      fillColor: Colors.white.withValues(alpha: 0.1),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  const SizedBox(height: 12),
                   // Tab 切換器
                   Row(
                     children: [
@@ -979,33 +932,14 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
     Map<String, ContentItem> contentItemsMap,
     Map<String, Product> productsMap,
     bool showToLearn,
-    String searchQuery,
   ) {
+    final tokens = context.tokens;
     final product = productsMap[productId];
     final productTitle = product?.title ?? '未知產品';
     
     // 根據 showToLearn 過濾內容
-    final filteredToLearn = showToLearn
-        ? group['toLearn']!
-            .where((contentId) {
-              if (searchQuery.isEmpty) return true;
-              final contentItem = contentItemsMap[contentId];
-              if (contentItem == null) return false;
-              return _matchesSearch(searchQuery, contentItem, product);
-            })
-            .toList()
-        : <String>[];
-    
-    final filteredLearned = !showToLearn
-        ? group['learned']!
-            .where((contentId) {
-              if (searchQuery.isEmpty) return true;
-              final contentItem = contentItemsMap[contentId];
-              if (contentItem == null) return false;
-              return _matchesSearch(searchQuery, contentItem, product);
-            })
-            .toList()
-        : <String>[];
+    final filteredToLearn = showToLearn ? group['toLearn']! : <String>[];
+    final filteredLearned = !showToLearn ? group['learned']! : <String>[];
     
     // 排序內容：依 seq
     filteredToLearn.sort((a, b) {
@@ -1039,7 +973,7 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
             '共 $displayCount 則 ($subtitle)',
             style: TextStyle(
               fontSize: 12,
-              color: Colors.white.withValues(alpha: 0.7),
+              color: tokens.textSecondary,
             ),
           ),
           children: [
@@ -1144,8 +1078,8 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
         // ✅ 步驟 1：背景色區分狀態
         decoration: BoxDecoration(
           color: isLearned
-              ? Colors.green.withValues(alpha: 0.1) // 已學習：淺綠色背景
-              : Colors.orange.withValues(alpha: 0.1), // 待學習：淺橙色背景
+              ? tokens.primary.withValues(alpha: 0.1) // 已學習：主題色背景
+              : tokens.cardBorder.withValues(alpha: 0.3), // 待學習：淺色背景
           borderRadius: BorderRadius.circular(16),
         ),
         child: Stack(
@@ -1244,7 +1178,7 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
                       },
                       backgroundColor: isLearned
                           ? null // 已學習：Outlined 樣式
-                          : Colors.green.withValues(alpha: 0.2), // 待學習：綠色背景
+                          : tokens.primary.withValues(alpha: 0.2), // 待學習：主題色背景
                       side: isLearned
                           ? BorderSide(color: tokens.textSecondary)
                           : null,
@@ -1258,7 +1192,7 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
                           : contentItem.content,
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.white.withValues(alpha: 0.6),
+                        color: tokens.textSecondary,
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -1281,8 +1215,8 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: isLearned
-                        ? Colors.green.withValues(alpha: 0.2) // 已學習：綠色
-                        : Colors.orange.withValues(alpha: 0.2), // 待學習：橙色
+                        ? tokens.primary.withValues(alpha: 0.2) // 已學習：主題色
+                        : tokens.cardBorder.withValues(alpha: 0.4), // 待學習：淺色
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                       color: isLearned ? Colors.green : Colors.orange,
@@ -1319,17 +1253,7 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
 
   @override
   void dispose() {
-    _searchController.dispose();
     super.dispose();
-  }
-
-  // ✅ 階段 4：搜尋/篩選邏輯
-  bool _matchesSearch(String? query, ContentItem contentItem, Product? product) {
-    if (query == null || query.isEmpty) return true;
-    final lowerQuery = query.toLowerCase();
-    return contentItem.anchorGroup.toLowerCase().contains(lowerQuery) ||
-        contentItem.anchor.toLowerCase().contains(lowerQuery) ||
-        (product?.title.toLowerCase().contains(lowerQuery) ?? false);
   }
 
   bool _matchesFilter(String productId) {

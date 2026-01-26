@@ -11,6 +11,7 @@ import 'widgets/bubble_card.dart';
 import 'widgets/push_inbox_section.dart';
 import '../../../pages/push_timeline_page.dart';
 import '../../../notifications/push_timeline_provider.dart';
+import '../../theme/app_tokens.dart';
 
 class PushCenterPage extends ConsumerWidget {
   const PushCenterPage({super.key});
@@ -99,14 +100,21 @@ class PushCenterPage extends ConsumerWidget {
                 data: (lib) {
                   final pushing =
                       lib.where((e) => !e.isHidden && e.pushEnabled).toList();
-                  if (pushing.isEmpty) {
+                  final completed =
+                      lib.where((e) => !e.isHidden && !e.pushEnabled && e.completedAt != null).toList();
+                  
+                  if (pushing.isEmpty && completed.isEmpty) {
+                    final tokens = context.tokens;
                     return BubbleCard(
                         child: Text('目前沒有推播中的商品',
                             style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.8))));
+                                color: tokens.textSecondary)));
                   }
+                  
                   return Column(
-                    children: pushing.map((lp) {
+                    children: [
+                      // 推播中的商品
+                      ...pushing.map((lp) {
                       final title =
                           products[lp.productId]?.title ?? lp.productId;
                       return Padding(
@@ -145,6 +153,84 @@ class PushCenterPage extends ConsumerWidget {
                         ),
                       );
                     }).toList(),
+                      
+                      // 已完成的商品
+                      if (completed.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        BubbleCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(Icons.emoji_events, 
+                                    size: 20, 
+                                    color: context.tokens.primary),
+                                  const SizedBox(width: 8),
+                                  Text('已全部完成',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w800,
+                                      color: context.tokens.primary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              ...completed.map((lp) {
+                                final title = products[lp.productId]?.title ?? lp.productId;
+                                final completedDate = lp.completedAt != null
+                                    ? '${lp.completedAt!.month}/${lp.completedAt!.day}'
+                                    : '';
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: InkWell(
+                                    onTap: () => Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => PushProductConfigPage(
+                                          productId: lp.productId,
+                                        ),
+                                      ),
+                                    ),
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 4),
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.check_circle, 
+                                            size: 20, 
+                                            color: context.tokens.primary),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: Text(title,
+                                              style: const TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ),
+                                          if (completedDate.isNotEmpty)
+                                            Text(completedDate,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: context.tokens.textSecondary,
+                                              ),
+                                            ),
+                                          const SizedBox(width: 8),
+                                          Icon(Icons.chevron_right,
+                                            size: 18,
+                                            color: context.tokens.textSecondary),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
                   );
                 },
                 loading: () => const Center(child: CircularProgressIndicator()),
@@ -242,34 +328,12 @@ class PushCenterPage extends ConsumerWidget {
                   child: Text(
                     '若產品推播加總數量超過每日總上限，部分橫幅通知會被延後推播',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.7),
+                      color: context.tokens.textSecondary,
                       fontSize: 12,
                     ),
                   ),
                 ),
               ],
-            ),
-          ),
-          ListTile(
-            title: const Text('推播樣式'),
-            subtitle: Text(g.styleMode),
-            trailing: DropdownButton<String>(
-              value: g.styleMode,
-              items: const ['compact', 'standard', 'interactive']
-                  .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-                  .toList(),
-              onChanged: (v) async {
-                if (v == null) return;
-                final newSettings = g.copyWith(styleMode: v);
-                // ✅ 並行執行：寫入 Firestore 和重排同時進行
-                final writeFuture = repo.setGlobal(uid, newSettings);
-                final rescheduleFuture = PushOrchestrator.rescheduleNextDays(
-                  ref: ref,
-                  days: 3,
-                  overrideGlobal: newSettings,
-                );
-                await Future.wait([writeFuture, rescheduleFuture]);
-              },
             ),
           ),
           // ✅ 勿擾 / 靜音時段（全域）
@@ -337,7 +401,7 @@ class PushCenterPage extends ConsumerWidget {
           const SizedBox(height: 4),
           Text('更改設定後會自動重排未來 3 天推播',
               style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.7), fontSize: 12)),
+                  color: context.tokens.textSecondary, fontSize: 12)),
         ],
       ),
     );

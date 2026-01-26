@@ -225,9 +225,9 @@ class _MeAchievementsSectionState extends ConsumerState<MeAchievementsSection> {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.06),
+          color: context.tokens.cardBg.withValues(alpha: 0.3),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+          border: Border.all(color: context.tokens.cardBorder),
         ),
         child: Row(
           children: [

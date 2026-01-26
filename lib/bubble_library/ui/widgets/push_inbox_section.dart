@@ -5,6 +5,7 @@ import '../../../notifications/notification_inbox_provider.dart';
 import '../product_library_page.dart';
 import 'bubble_card.dart';
 import '../../providers/providers.dart';
+import '../../../theme/app_tokens.dart';
 
 class PushInboxSection extends ConsumerWidget {
   const PushInboxSection({super.key});
@@ -104,7 +105,7 @@ class PushInboxSection extends ConsumerWidget {
                 child: Text(
                   '沒有錯過的推播 🎉',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.8),
+                    color: context.tokens.textSecondary,
                   ),
                 ),
               );
@@ -143,14 +144,14 @@ class PushInboxSection extends ConsumerWidget {
                         style: TextStyle(
                           fontWeight: FontWeight.w900,
                           color: isRead
-                              ? Colors.white.withValues(alpha: 0.7)
-                              : Colors.white,
+                              ? context.tokens.textSecondary
+                              : context.tokens.textPrimary,
                         ),
                       ),
                       subtitle: Text(
                         '${_fmt(when)} · $productId',
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.75),
+                          color: context.tokens.textSecondary,
                           fontSize: 12,
                         ),
                       ),
@@ -196,7 +197,7 @@ class PushInboxSection extends ConsumerWidget {
             child: Text(
               '載入收件匣時發生錯誤',
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.8),
+                color: context.tokens.textSecondary,
               ),
             ),
           ),

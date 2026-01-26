@@ -9,7 +9,6 @@ import '../../../bubble_library/providers/providers.dart'
     show uidProvider, libraryProductsProvider;
 import '../../../collections/wishlist_provider.dart';
 import '../../../data/models.dart';
-import '../../../pages/product_page.dart';
 import '../../../pages/product_list_page.dart';
 
 class CategoryNetflixRailsSection extends ConsumerWidget {
@@ -20,8 +19,6 @@ class CategoryNetflixRailsSection extends ConsumerWidget {
     final tokens = context.tokens;
 
     final productsMapAsync = ref.watch(allProductsMapProvider);
-    final hotAsync = ref.watch(featuredProductsProvider('hot_all'));
-    final weeklyAsync = ref.watch(featuredProductsProvider('weekly_pick'));
     final segSelected = ref.watch(selectedSegmentProvider);
     final topicsAsync = ref.watch(topicsForSelectedSegmentProvider);
 
@@ -128,85 +125,6 @@ class CategoryNetflixRailsSection extends ConsumerWidget {
           ),
         ),
 
-        const SizedBox(height: 16),
-
-        // Rail 1：新上架（真資料：用 productsMap 推，盡力找 createdAt/updatedAt/order）
-        _sectionTitle(context, '新上架'),
-        const SizedBox(height: 10),
-        productsMapAsync.when(
-          data: (productsMap) {
-            final list = productsMap.values.toList();
-            list.sort((a, b) => _newerFirst(a, b));
-            final top = list.take(12).toList();
-            if (top.isEmpty) {
-              return _emptyCard(context, '新上架：目前沒有資料');
-            }
-            return _rail(context, top);
-          },
-          loading: () => const SizedBox(
-              height: 190, child: Center(child: CircularProgressIndicator())),
-          error: (e, _) => _emptyCard(context, '新上架：讀取錯誤 $e'),
-        ),
-
-        const SizedBox(height: 18),
-
-        // Rail 2：最多人解鎖（熱門）
-        _sectionTitle(context, '最多人解鎖'),
-        const SizedBox(height: 10),
-        hotAsync.when(
-          data: (ps) => ps.isEmpty
-              ? _emptyCard(context, '熱門：無資料')
-              : _rail(context, ps.take(12).toList()),
-          loading: () => const SizedBox(
-              height: 190, child: Center(child: CircularProgressIndicator())),
-          error: (e, _) => _emptyCard(context, '熱門：讀取錯誤 $e'),
-        ),
-
-        const SizedBox(height: 18),
-
-        // Rail 3：適合你（用 library/wishlist 的 topic 偏好 + 最愛/推播/最近開啟加權）
-        _sectionTitle(context, '適合你'),
-        const SizedBox(height: 10),
-        productsMapAsync.when(
-          data: (productsMap) {
-            return libAsync.when(
-              data: (lib) {
-                return wishAsync.when(
-                  data: (wish) {
-                    final list = _forYouProducts(productsMap, lib, wish)
-                        .take(12)
-                        .toList();
-                    if (list.isEmpty) {
-                      // fallback：週精選
-                      return weeklyAsync.when(
-                        data: (ps) => ps.isEmpty
-                            ? _emptyCard(context, '適合你：先收藏/購買幾個商品')
-                            : _rail(context, ps.take(12).toList()),
-                        loading: () => const SizedBox(
-                            height: 190,
-                            child: Center(child: CircularProgressIndicator())),
-                        error: (e, _) => _emptyCard(context, '適合你：讀取錯誤 $e'),
-                      );
-                    }
-                    return _rail(context, list);
-                  },
-                  loading: () => const SizedBox(
-                      height: 190,
-                      child: Center(child: CircularProgressIndicator())),
-                  error: (e, _) => _emptyCard(context, '適合你：讀取錯誤 $e'),
-                );
-              },
-              loading: () => const SizedBox(
-                  height: 190,
-                  child: Center(child: CircularProgressIndicator())),
-              error: (e, _) => _emptyCard(context, '適合你：讀取錯誤 $e'),
-            );
-          },
-          loading: () => const SizedBox(
-              height: 190, child: Center(child: CircularProgressIndicator())),
-          error: (e, _) => _emptyCard(context, '適合你：讀取錯誤 $e'),
-        ),
-
         const SizedBox(height: 18),
 
         // 學習路徑 / 入門包（先做 UI + 真 topics；不需後端）
@@ -243,10 +161,10 @@ class CategoryNetflixRailsSection extends ConsumerWidget {
                           child: Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.06),
+                              color: context.tokens.cardBg.withValues(alpha: 0.3),
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
-                                  color: Colors.white.withValues(alpha: 0.10)),
+                                  color: context.tokens.cardBorder),
                             ),
                             child: Row(
                               children: [
@@ -309,12 +227,6 @@ class CategoryNetflixRailsSection extends ConsumerWidget {
     } catch (_) {
       return const AsyncValue.data(<dynamic>[]);
     }
-  }
-
-  // 新上架排序：盡量找 createdAt/updatedAt/order；沒有就保持穩定 fallback
-  int _newerFirst(Product a, Product b) {
-    // fallback：用 id 字串
-    return b.id.compareTo(a.id);
   }
 
   // 最近常看 topics：用 library.lastOpenedAt/purchasedAt 推 topicId
@@ -382,66 +294,6 @@ class CategoryNetflixRailsSection extends ConsumerWidget {
     return list.map((e) => e.key).toList();
   }
 
-  // 適合你：用 topic 偏好加權，挑出產品
-  List<Product> _forYouProducts(
-      Map<String, Product> productsMap, List<dynamic> lib, List<dynamic> wish) {
-    final topicScore = <String, int>{};
-
-    void addTopic(String pid, int w) {
-      final p = productsMap[pid];
-      if (p == null) return;
-      topicScore[p.topicId] = (topicScore[p.topicId] ?? 0) + w;
-    }
-
-    // library：推播/最愛/最近開啟 加權
-    for (final lp in lib) {
-      try {
-        if ((lp as dynamic).isHidden == true) continue;
-        final pid = (lp as dynamic).productId.toString();
-        addTopic(pid, 2);
-        if ((lp as dynamic).pushEnabled == true) addTopic(pid, 5);
-        if ((lp as dynamic).isFavorite == true) addTopic(pid, 4);
-      } catch (_) {}
-    }
-
-    // wishlist：加一點權重
-    for (final w in wish) {
-      try {
-        final pid = (w as dynamic).productId.toString();
-        addTopic(pid, 1);
-        if ((w as dynamic).isFavorite == true) addTopic(pid, 2);
-      } catch (_) {}
-    }
-
-    if (topicScore.isEmpty) return <Product>[];
-
-    // 依 topicScore 取產品，排除你已擁有/願望清單的 pid（讓推薦更像探索）
-    final owned = <String>{};
-    for (final lp in lib) {
-      try {
-        owned.add((lp as dynamic).productId.toString());
-      } catch (_) {}
-    }
-    for (final w in wish) {
-      try {
-        owned.add((w as dynamic).productId.toString());
-      } catch (_) {}
-    }
-
-    final candidates =
-        productsMap.values.where((p) => !owned.contains(p.id)).toList();
-
-    candidates.sort((a, b) {
-      final sa = topicScore[a.topicId] ?? 0;
-      final sb = topicScore[b.topicId] ?? 0;
-      final cmp = sb.compareTo(sa);
-      if (cmp != 0) return cmp;
-      return _newerFirst(a, b);
-    });
-
-    return candidates;
-  }
-
   // ---------- UI helpers ----------
 
   Widget _sectionTitle(BuildContext context, String title) {
@@ -451,16 +303,6 @@ class CategoryNetflixRailsSection extends ConsumerWidget {
             fontSize: 18,
             fontWeight: FontWeight.w900,
             color: tokens.textPrimary));
-  }
-
-  Widget _emptyCard(BuildContext context, String text) {
-    final tokens = context.tokens;
-    return AppCard(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Text(text, style: TextStyle(color: tokens.textSecondary)),
-      ),
-    );
   }
 
   Widget _topicChip(BuildContext context, String text,
@@ -478,99 +320,6 @@ class CategoryNetflixRailsSection extends ConsumerWidget {
         ),
         child: Text(text,
             style: TextStyle(color: tokens.textPrimary, fontSize: 12)),
-      ),
-    );
-  }
-
-  Widget _rail(BuildContext context, List<Product> products) {
-    final tokens = context.tokens;
-    return SizedBox(
-      height: 190,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: products.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
-        itemBuilder: (_, i) {
-          final p = products[i];
-          return SizedBox(
-            width: 280,
-            child: AppCard(
-              padding: EdgeInsets.zero,
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => ProductPage(productId: p.id),
-              )),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (p.coverImageUrl != null && p.coverImageUrl!.isNotEmpty)
-                    ClipRRect(
-                      borderRadius:
-                          const BorderRadius.vertical(top: Radius.circular(20)),
-                      child: Image.network(
-                        p.coverImageUrl!,
-                        height: 110,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          height: 110,
-                          color: tokens.chipBg,
-                          child: Icon(Icons.image_not_supported,
-                              color: tokens.textSecondary),
-                        ),
-                      ),
-                    ),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.max,
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(p.title,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w900,
-                                        color: tokens.textPrimary)),
-                                const SizedBox(height: 6),
-                                Text('${p.topicId} · ${p.level}',
-                                    style: TextStyle(
-                                        color: tokens.textSecondary, fontSize: 12)),
-                                if (p.levelGoal != null &&
-                                    p.levelGoal!.trim().isNotEmpty) ...[
-                                  const SizedBox(height: 6),
-                                  Text(p.levelGoal!,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                          color: tokens.textSecondary, fontSize: 12)),
-                                ],
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Align(
-                            alignment: Alignment.bottomRight,
-                            child: Text('查看 ›',
-                                style: TextStyle(
-                                    color: tokens.primary,
-                                    fontWeight: FontWeight.w800)),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
       ),
     );
   }

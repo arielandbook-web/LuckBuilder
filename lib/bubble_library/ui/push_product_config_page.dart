@@ -5,6 +5,7 @@ import '../providers/providers.dart';
 import '../models/push_config.dart';
 import '../notifications/push_orchestrator.dart';
 import 'widgets/bubble_card.dart';
+import '../../theme/app_tokens.dart';
 
 class PushProductConfigPage extends ConsumerWidget {
   final String productId;
@@ -46,6 +47,61 @@ class PushProductConfigPage extends ConsumerWidget {
                           style: const TextStyle(
                               fontSize: 18, fontWeight: FontWeight.w900)),
                       const SizedBox(height: 8),
+                      
+                      // 顯示完成狀態
+                      if (lp.completedAt != null) ...[
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: context.tokens.primary.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: context.tokens.primary),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.emoji_events, 
+                                color: context.tokens.primary, size: 20),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('已全部完成！',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                        color: context.tokens.primary,
+                                      ),
+                                    ),
+                                    Text(
+                                      '完成時間：${lp.completedAt!.month}/${lp.completedAt!.day} ${lp.completedAt!.hour}:${lp.completedAt!.minute.toString().padLeft(2, '0')}',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: context.tokens.textSecondary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        
+                        // 重新開始按鈕
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () => _showRestartDialog(context, ref, uid!, productId, title),
+                            icon: const Icon(Icons.restart_alt),
+                            label: const Text('重新開始'),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      
                       SwitchListTile.adaptive(
                         value: lp.pushEnabled,
                         onChanged: (v) async {
@@ -268,5 +324,67 @@ class PushProductConfigPage extends ConsumerWidget {
             )),
       ],
     );
+  }
+
+  /// 顯示重新開始確認對話框
+  Future<void> _showRestartDialog(
+    BuildContext context,
+    WidgetRef ref,
+    String uid,
+    String productId,
+    String productTitle,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('重新開始學習？'),
+        content: Text('這將清除「$productTitle」的所有學習記錄，並重新啟用推播。\n\n確定要繼續嗎？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('確定重新開始'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      // 獲取該商品的所有內容
+      final contentItems = await ref.read(contentByProductProvider(productId).future);
+      final contentItemIds = contentItems.map((e) => e.id).toList();
+
+      // 執行重置
+      final repo = ref.read(libraryRepoProvider);
+      await repo.resetProductProgress(
+        uid: uid,
+        productId: productId,
+        contentItemIds: contentItemIds,
+      );
+
+      // 刷新 UI
+      ref.invalidate(savedItemsProvider);
+      ref.invalidate(libraryProductsProvider);
+      
+      // 重新排程
+      await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已重新開始，推播已重新排程')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('重置失敗: $e')),
+        );
+      }
+    }
   }
 }

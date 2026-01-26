@@ -277,9 +277,9 @@ class _MeInterestTagsSectionState extends ConsumerState<MeInterestTagsSection> {
               margin: const EdgeInsets.all(12),
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.78),
+                color: context.tokens.cardBg,
                 borderRadius: BorderRadius.circular(22),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+                border: Border.all(color: context.tokens.cardBorder),
               ),
               child: SafeArea(
                 top: false,
@@ -313,12 +313,11 @@ class _MeInterestTagsSectionState extends ConsumerState<MeInterestTagsSection> {
                               hintText: '例如：睡前學習、通勤碎片…',
                               hintStyle: TextStyle(color: tokens.textSecondary),
                               filled: true,
-                              fillColor: Colors.white.withValues(alpha: 0.08),
+                              fillColor: tokens.cardBg.withValues(alpha: 0.5),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(14),
                                 borderSide: BorderSide(
-                                    color:
-                                        Colors.white.withValues(alpha: 0.12)),
+                                    color: tokens.cardBorder),
                               ),
                             ),
                           ),

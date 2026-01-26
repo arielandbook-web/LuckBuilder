@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../theme/app_tokens.dart';
 
 class TLRow {
   final bool isHeader;
@@ -32,23 +33,24 @@ String tlTimeOnly(DateTime dt) {
   return '$hh:$mm';
 }
 
-Widget tlTag(String text, IconData icon) {
+Widget tlTag(BuildContext context, String text, IconData icon) {
+  final tokens = context.tokens;
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
     decoration: BoxDecoration(
-      color: Colors.white.withValues(alpha: 0.10),
+      color: tokens.cardBorder.withValues(alpha: 0.3),
       borderRadius: BorderRadius.circular(999),
-      border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+      border: Border.all(color: tokens.cardBorder),
     ),
     child: Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 14, color: Colors.white.withValues(alpha: 0.85)),
+        Icon(icon, size: 14, color: tokens.textPrimary),
         const SizedBox(width: 6),
         Text(
           text,
           style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.85),
+            color: tokens.textPrimary,
             fontSize: 12,
             fontWeight: FontWeight.w700,
           ),
@@ -71,6 +73,7 @@ Widget tlTimelineRow({
   required VoidCallback onTap,
   Widget? trailing, // 可選：右下角操作區
 }) {
+  final tokens = context.tokens;
   const axisWidth = 76.0;
   const dotSize = 10.0;
 
@@ -91,7 +94,7 @@ Widget tlTimelineRow({
                     width: 2,
                     color: isFirst
                         ? Colors.transparent
-                        : Colors.white.withValues(alpha: 0.12),
+                        : tokens.cardBorder,
                   ),
                 ),
               ),
@@ -103,7 +106,7 @@ Widget tlTimelineRow({
                     height: dotSize,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: Colors.white.withValues(alpha: 0.85),
+                      color: tokens.primary,
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -112,7 +115,7 @@ Widget tlTimelineRow({
                       '${tlTimeOnly(when)}${seqInDay != null ? ' · 第 $seqInDay 則' : ''}',
                       style: TextStyle(
                         fontWeight: FontWeight.w900,
-                        color: Colors.white.withValues(alpha: 0.85),
+                        color: tokens.textPrimary,
                         fontSize: 12,
                       ),
                     ),
@@ -126,7 +129,7 @@ Widget tlTimelineRow({
                     width: 2,
                     color: isLast
                         ? Colors.transparent
-                        : Colors.white.withValues(alpha: 0.12),
+                        : tokens.cardBorder,
                   ),
                 ),
               ),
@@ -154,7 +157,7 @@ Widget tlTimelineRow({
                           Text(
                             metaText,
                             style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.7),
+                              color: tokens.textSecondary,
                               fontWeight: FontWeight.w800,
                               fontSize: 12,
                             ),
@@ -167,10 +170,10 @@ Widget tlTimelineRow({
                       runSpacing: 6,
                       children: [
                         if ((saved?.learned ?? false))
-                          tlTag('已學會', Icons.check_circle),
-                        if ((saved?.favorite ?? false)) tlTag('收藏', Icons.star),
+                          tlTag(context, '已學會', Icons.check_circle),
+                        if ((saved?.favorite ?? false)) tlTag(context, '收藏', Icons.star),
                         if ((saved?.reviewLater ?? false))
-                          tlTag('稍後', Icons.schedule),
+                          tlTag(context, '稍後', Icons.schedule),
                       ],
                     ),
                     if ((saved?.learned ?? false) ||

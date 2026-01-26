@@ -172,6 +172,10 @@ class DetailPage extends ConsumerWidget {
                                 pushOrder: item.pushOrder,
                                 source: 'detail_page',
                               );
+                              // ✅ 刷新 UI（savedItemsProvider 是 StreamProvider，會自動更新）
+                              // 但為確保即時性，手動 invalidate
+                              ref.invalidate(savedItemsProvider);
+                              ref.invalidate(libraryProductsProvider);
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(content: Text('已標記為完成')),
@@ -214,6 +218,8 @@ class DetailPage extends ConsumerWidget {
                                 duration: const Duration(hours: 6),
                                 source: 'detail_page',
                               );
+                              // ✅ 刷新 UI
+                              ref.invalidate(savedItemsProvider);
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(content: Text('已延後 6 小時')),

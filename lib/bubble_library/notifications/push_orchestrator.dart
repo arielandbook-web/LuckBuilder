@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/global_push_settings.dart';
 import '../models/push_config.dart';
@@ -139,6 +140,9 @@ class PushOrchestrator {
     final dailyCap = global.dailyTotalCap.clamp(1, 50);
     final overCap = totalEffectiveFreq > dailyCap;
 
+    // ✅ 收集已完成的商品列表
+    final completedProductIds = <String>[];
+    
     // ✅ 建 schedule（已帶 productOrder → 真排序）
     final tasks = PushScheduler.buildSchedule(
       now: DateTime.now(),
@@ -149,6 +153,7 @@ class PushOrchestrator {
       savedMap: savedMap,
       iosSafeMaxScheduled: 60,
       productOrder: productOrder,
+      outCompletedProductIds: completedProductIds,
     );
 
     // ✅ 診斷：顯示排程結果
@@ -275,6 +280,46 @@ class PushOrchestrator {
     }
 
     ref.invalidate(scheduledCacheProvider);
+
+    // ✅ 處理已完成的商品：自動暫停並發送恭喜通知
+    if (completedProductIds.isNotEmpty) {
+      final repo = ref.read(libraryRepoProvider);
+      for (final productId in completedProductIds) {
+        try {
+          // 自動暫停推播
+          await repo.setLibraryItem(uid, productId, {
+            'pushEnabled': false,
+            'completedAt': FieldValue.serverTimestamp(),
+          });
+          
+          // 推送恭喜通知（3秒後推送，確保能立即收到）
+          final product = productsMap[productId];
+          final productTitle = product?.title ?? productId;
+          final notifyId = DateTime.now().millisecondsSinceEpoch.remainder(1000000);
+          await ns.schedule(
+            id: notifyId,
+            when: DateTime.now().add(const Duration(seconds: 3)),
+            title: '恭喜完成！🎉',
+            body: '您已完成「$productTitle」的所有內容學習！\n點擊查看推播設定重新開始。',
+            payload: {
+              'type': 'completion',
+              'productId': productId,
+            },
+          );
+          
+          if (kDebugMode) {
+            debugPrint('✅ 商品已完成：$productId - 自動暫停並發送恭喜通知');
+          }
+        } catch (e) {
+          if (kDebugMode) {
+            debugPrint('❌ 處理完成商品失敗 ($productId): $e');
+          }
+        }
+      }
+      
+      // 刷新 UI
+      ref.invalidate(libraryProductsProvider);
+    }
 
     return RescheduleResult(
       overCap: overCap,

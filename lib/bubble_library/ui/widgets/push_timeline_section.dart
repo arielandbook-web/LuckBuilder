@@ -6,6 +6,7 @@ import '../../providers/providers.dart';
 import '../../notifications/push_orchestrator.dart';
 import '../../models/push_config.dart';
 import 'bubble_card.dart';
+import '../../../theme/app_tokens.dart';
 
 class PushTimelineSection extends ConsumerStatefulWidget {
   final Future<void> Function(ScheduledPushEntry entry)? onSkip;
@@ -111,6 +112,8 @@ class PushTimelineSectionState extends ConsumerState<PushTimelineSection> {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    
     if (_loading) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 10),
@@ -135,7 +138,7 @@ class PushTimelineSectionState extends ConsumerState<PushTimelineSection> {
         BubbleCard(
           child: _upcoming.isEmpty
               ? Text('尚未排程（請按右上角刷新重排）',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.8)))
+                  style: TextStyle(color: tokens.textSecondary))
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -145,7 +148,7 @@ class PushTimelineSectionState extends ConsumerState<PushTimelineSection> {
                         child: Text(
                           day,
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.85),
+                            color: tokens.textPrimary,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
@@ -180,7 +183,7 @@ class PushTimelineSectionState extends ConsumerState<PushTimelineSection> {
                           subtitle: Text(
                             '$productId$dayText',
                             style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.75),
+                              color: tokens.textSecondary,
                               fontSize: 12,
                             ),
                           ),
@@ -248,10 +251,13 @@ class PushTimelineSectionState extends ConsumerState<PushTimelineSection> {
           loading: () => const BubbleCard(
             child: Center(child: CircularProgressIndicator()),
           ),
-          error: (_, __) => BubbleCard(
-            child: Text('載入錯誤',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.8))),
-          ),
+          error: (_, __) {
+            final tokens = context.tokens;
+            return BubbleCard(
+              child: Text('載入錯誤',
+                  style: TextStyle(color: tokens.textSecondary)),
+            );
+          },
         ),
         const SizedBox(height: 8),
         Row(
@@ -265,7 +271,7 @@ class PushTimelineSectionState extends ConsumerState<PushTimelineSection> {
             Text(
               '（資料來源：本機排程快取）',
               style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.6), fontSize: 12),
+                  color: context.tokens.textSecondary, fontSize: 12),
             ),
           ],
         ),

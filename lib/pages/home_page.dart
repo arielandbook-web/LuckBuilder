@@ -2,14 +2,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/v2_providers.dart';
-import '../providers/nav_providers.dart';
 import '../providers/home_sections_provider.dart';
 import '../widgets/app_card.dart';
 import '../widgets/product_rail.dart';
 import '../theme/app_tokens.dart';
 import '../data/models.dart';
-import '../ui/rich_sections/home_today_task_section.dart';
-import '../ui/rich_sections/home_status_section.dart';
 import '../widgets/rich_sections/sections/home_for_you_section.dart';
 import '../widgets/rich_sections/user_learning_store.dart';
 import 'product_page.dart';
@@ -30,34 +27,6 @@ class HomePage extends ConsumerWidget {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // 小搜尋列（點了跳到搜尋tab）
-          AppCard(
-            padding: const EdgeInsets.all(14),
-            onTap: () {
-              ref.read(bottomTabIndexProvider.notifier).state = 3; // 跳到搜尋 tab
-            },
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: tokens.searchBarGradient,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.search, color: tokens.textSecondary),
-                  const SizedBox(width: 8),
-                  Text('搜尋產品 / 主題…',
-                      style: TextStyle(color: tokens.textSecondary)),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // 今日任務區塊
-          const HomeTodayTaskSection(dailyLimit: 20),
-          // 學習狀態區塊
-          const HomeStatusSection(),
-          const SizedBox(height: 18),
 
           // ✅ 新上架
           const _Section(title: '新上架'),

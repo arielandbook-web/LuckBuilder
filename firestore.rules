@@ -1,0 +1,88 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ========== 公開集合：所有人可讀 ==========
+    
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if false; // 僅管理員可寫
+    }
+    
+    match /content_items/{contentItemId} {
+      allow read: if true;
+      allow write: if false; // 僅管理員可寫
+    }
+    
+    match /topics/{topicId} {
+      allow read: if true;
+      allow write: if false; // 僅管理員可寫
+    }
+    
+    match /featured_lists/{listId} {
+      allow read: if true;
+      allow write: if false; // 僅管理員可寫
+    }
+    
+    match /ui/{document=**} {
+      allow read: if true;
+      allow write: if false; // 僅管理員可寫
+    }
+    
+    // ========== 用戶專屬資料：只能讀寫自己的資料 ==========
+    
+    match /users/{userId} {
+      // 用戶基本資料
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // 用戶的子集合
+      match /library_products/{productId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+      
+      match /wishlist/{productId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+      
+      match /saved_items/{contentItemId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+      
+      match /push_settings/{document=**} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+      
+      // ✅ 進度管理（SSOT）- ProgressService 使用
+      // 路徑：users/{userId}/progress/{contentId}
+      match /progress/{contentId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        
+        // 允許 create：確保 contentId 匹配且 state 存在
+        // 注意：updatedAt 使用 FieldValue.serverTimestamp()，rules 無法直接驗證，所以不檢查
+        allow create: if request.auth != null 
+                      && request.auth.uid == userId
+                      && request.resource.data.contentId == contentId
+                      && 'state' in request.resource.data;
+        
+        // 允許 update：確保 contentId 不會被修改
+        // 使用 set() with merge: true 時，如果文檔已存在會被視為 update
+        allow update: if request.auth != null 
+                      && request.auth.uid == userId
+                      && request.resource.data.contentId == contentId
+                      && (resource.data == null || resource.data.contentId == contentId);
+        
+        allow delete: if request.auth != null && request.auth.uid == userId;
+      }
+      
+      // ✅ 舊系統相容：topicProgress 和 contentState（可選保留或移除）
+      match /topicProgress/{topicId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+      
+      match /contentState/{contentId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+  }
+}

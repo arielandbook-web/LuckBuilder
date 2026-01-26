@@ -35,6 +35,7 @@ class UserLibraryProduct {
   final ProgressState progress;
   final DateTime? lastOpenedAt;
   final PushConfig pushConfig;
+  final DateTime? completedAt; // 全部內容學習完成的時間戳
 
   const UserLibraryProduct({
     required this.productId,
@@ -45,11 +46,13 @@ class UserLibraryProduct {
     required this.progress,
     required this.lastOpenedAt,
     required this.pushConfig,
+    this.completedAt,
   });
 
   factory UserLibraryProduct.fromMap(String productId, Map<String, dynamic> m) {
     final ts = m['purchasedAt'] as Timestamp?;
     final last = m['lastOpenedAt'] as Timestamp?;
+    final completed = m['completedAt'] as Timestamp?;
     return UserLibraryProduct(
       productId: productId,
       purchasedAt: ts?.toDate() ?? DateTime.now(),
@@ -61,6 +64,7 @@ class UserLibraryProduct {
       lastOpenedAt: last?.toDate(),
       pushConfig: PushConfig.fromMap(
           (m['pushConfig'] as Map?)?.cast<String, dynamic>()),
+      completedAt: completed?.toDate(),
     );
   }
 
@@ -74,6 +78,8 @@ class UserLibraryProduct {
         'lastOpenedAt':
             lastOpenedAt == null ? null : Timestamp.fromDate(lastOpenedAt!),
         'pushConfig': pushConfig.toMap(),
+        'completedAt':
+            completedAt == null ? null : Timestamp.fromDate(completedAt!),
       };
 
   UserLibraryProduct copyWith({
@@ -83,6 +89,7 @@ class UserLibraryProduct {
     ProgressState? progress,
     DateTime? lastOpenedAt,
     PushConfig? pushConfig,
+    DateTime? completedAt,
   }) {
     return UserLibraryProduct(
       productId: productId,
@@ -93,6 +100,7 @@ class UserLibraryProduct {
       progress: progress ?? this.progress,
       lastOpenedAt: lastOpenedAt ?? this.lastOpenedAt,
       pushConfig: pushConfig ?? this.pushConfig,
+      completedAt: completedAt ?? this.completedAt,
     );
   }
 }

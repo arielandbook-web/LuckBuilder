@@ -107,16 +107,15 @@ class HomeTodayTaskSection extends ConsumerWidget {
                                 decoration: BoxDecoration(
                                   borderRadius: BorderRadius.circular(999),
                                   color: done
-                                      ? Colors.green.withValues(alpha: 0.25)
-                                      : Colors.white.withValues(alpha: 0.08),
+                                      ? tokens.primary.withValues(alpha: 0.15)
+                                      : tokens.cardBorder.withValues(alpha: 0.2),
                                   border: Border.all(
-                                      color:
-                                          Colors.white.withValues(alpha: 0.12)),
+                                      color: tokens.cardBorder.withValues(alpha: 0.5)),
                                 ),
                                 child: Text(
                                   done ? '今日已完成 ✅' : '尚未完成',
                                   style: TextStyle(
-                                    color: Colors.white.withValues(alpha: 0.9),
+                                    color: tokens.textPrimary,
                                     fontSize: 12,
                                     fontWeight: FontWeight.w800,
                                   ),
@@ -130,8 +129,8 @@ class HomeTodayTaskSection extends ConsumerWidget {
                             child: LinearProgressIndicator(
                               value: progress,
                               minHeight: 10,
-                              backgroundColor:
-                                  Colors.white.withValues(alpha: 0.08),
+                              backgroundColor: tokens.cardBorder.withValues(alpha: 0.3),
+                              valueColor: AlwaysStoppedAnimation<Color>(tokens.primary),
                             ),
                           ),
                           const SizedBox(height: 12),
@@ -148,7 +147,7 @@ class HomeTodayTaskSection extends ConsumerWidget {
                             Text(
                               countdownText,
                               style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.85),
+                                color: tokens.textPrimary,
                                 fontWeight: FontWeight.w800,
                               ),
                             ),

@@ -51,6 +51,7 @@ class _BubbleBootstrapperState extends ConsumerState<BubbleBootstrapper> {
     final progress = LearningProgressService();
 
     // 配置 NotificationService 的 action callbacks
+    // ✅ 重要：回調中必須 invalidate providers 以確保 UI 更新
     final ns = NotificationService();
     ns.configure(
       onLearned: (payload) async {
@@ -91,6 +92,9 @@ class _BubbleBootstrapperState extends ConsumerState<BubbleBootstrapper> {
             pushOrder: pushOrder,
             source: 'ios_action',
           );
+          // ✅ 確保 UI 更新：invalidate savedItemsProvider
+          ref.invalidate(savedItemsProvider);
+          ref.invalidate(libraryProductsProvider);
           if (kDebugMode) {
             debugPrint(
                 '✅ markLearnedAndAdvance: topicId=$topicId contentId=$contentId pushOrder=$pushOrder');
@@ -141,6 +145,8 @@ class _BubbleBootstrapperState extends ConsumerState<BubbleBootstrapper> {
             duration: const Duration(hours: 6), // ✅ 可改成明天 9:00（之後可調整）
             source: 'ios_action',
           );
+          // ✅ 確保 UI 更新：invalidate savedItemsProvider
+          ref.invalidate(savedItemsProvider);
           if (kDebugMode) {
             debugPrint(
                 '🌙 snoozeContent: topicId=$topicId contentId=$contentId pushOrder=$pushOrder');
@@ -248,6 +254,9 @@ class _BubbleBootstrapperState extends ConsumerState<BubbleBootstrapper> {
             pushOrder: pushOrder,
             source: 'notification_action',
           );
+          // ✅ 刷新 UI（LearningProgressService 已同步寫入 saved_items）
+          ref.invalidate(savedItemsProvider);
+          ref.invalidate(libraryProductsProvider);
           if (kDebugMode) {
             debugPrint('✅ LEARNED: product=$pid content=$cid -> advance next');
           }
@@ -257,10 +266,12 @@ class _BubbleBootstrapperState extends ConsumerState<BubbleBootstrapper> {
           }
           // 降級：如果 LearningProgressService 失敗，使用舊方法
           await repo.setSavedItem(uid, cid, {'learned': true});
+          ref.invalidate(savedItemsProvider);
         }
       } else {
         // 如果 payload 缺少必要資訊，使用舊方法
         await repo.setSavedItem(uid, cid, {'learned': true});
+        ref.invalidate(savedItemsProvider);
       }
     } else if (actionId == NotificationService.actionLater && cid != null) {
       // ✅ 使用 LearningProgressService 稍後再學（統一學習狀態管理）
@@ -280,6 +291,8 @@ class _BubbleBootstrapperState extends ConsumerState<BubbleBootstrapper> {
             duration: const Duration(hours: 6),
             source: 'notification_action',
           );
+          // ✅ 刷新 UI
+          ref.invalidate(savedItemsProvider);
           if (kDebugMode) {
             debugPrint('🌙 LATER: product=$pid content=$cid -> snooze');
           }
@@ -289,10 +302,12 @@ class _BubbleBootstrapperState extends ConsumerState<BubbleBootstrapper> {
           }
           // 降級：如果 LearningProgressService 失敗，使用舊方法
           await repo.setSavedItem(uid, cid, {'reviewLater': true});
+          ref.invalidate(savedItemsProvider);
         }
       } else {
         // 如果 payload 缺少必要資訊，使用舊方法
         await repo.setSavedItem(uid, cid, {'reviewLater': true});
+        ref.invalidate(savedItemsProvider);
       }
     }
 

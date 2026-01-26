@@ -15,6 +15,7 @@ class WishlistPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final productsAsync = ref.watch(productsMapProvider);
     final wishlistAsync = ref.watch(localWishlistProvider);
+    final libraryAsync = ref.watch(libraryProductsProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -29,17 +30,29 @@ class WishlistPage extends ConsumerWidget {
       ),
       body: productsAsync.when(
         data: (productsMap) {
-          return wishlistAsync.when(
-            data: (wishItems) {
+          return libraryAsync.when(
+            data: (libraryProducts) {
+              // ✅ 获取已购买的产品ID集合
+              final purchasedProductIds = libraryProducts
+                  .where((lp) => !lp.isHidden)
+                  .map((lp) => lp.productId)
+                  .toSet();
+              
+              return wishlistAsync.when(
+                data: (wishItems) {
+                  // ✅ 过滤：只显示未购买的产品
                   final list = wishItems
-                  .where((w) => productsMap.containsKey(w.productId))
-                  .map((w) => {
-                    'item': w,
-                    'product': productsMap[w.productId]!,
-                  })
-                  .toList()
-                ..sort((a, b) => (b['item'] as WishlistItem).addedAt
-                    .compareTo((a['item'] as WishlistItem).addedAt));
+                      .where((w) => 
+                        productsMap.containsKey(w.productId) &&
+                        !purchasedProductIds.contains(w.productId) // ✅ 排除已购买
+                      )
+                      .map((w) => {
+                        'item': w,
+                        'product': productsMap[w.productId]!,
+                      })
+                      .toList()
+                    ..sort((a, b) => (b['item'] as WishlistItem).addedAt
+                        .compareTo((a['item'] as WishlistItem).addedAt));
 
               if (list.isEmpty) {
                 return const Center(child: Text('目前沒有收藏的未購買商品'));
@@ -133,9 +146,13 @@ class WishlistPage extends ConsumerWidget {
                   );
                 },
               );
+                },
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, _) => Center(child: Text('wishlist error: $e')),
+              );
             },
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Center(child: Text('wishlist error: $e')),
+            error: (e, _) => Center(child: Text('library error: $e')),
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),

@@ -126,6 +126,15 @@ class PushScheduler {
     return out;
   }
 
+  /// 檢測商品是否已全部學習完成
+  static bool isAllLearned({
+    required List<ContentItem> items,
+    required Map<String, SavedContent> savedMap,
+  }) {
+    if (items.isEmpty) return false;
+    return items.every((e) => savedMap[e.id]?.learned ?? false);
+  }
+
   static ContentItem? _pickItem({
     required List<ContentItem> itemsSorted,
     required ProgressState progress,
@@ -183,6 +192,9 @@ class PushScheduler {
 
     // ✅ 新增：真排序用的「日常順序」(本機)
     List<String>? productOrder,
+    
+    // ✅ 新增：收集已全部完成的商品列表（供後續自動暫停）
+    List<String>? outCompletedProductIds,
   }) {
     if (!global.enabled) return [];
 
@@ -227,6 +239,14 @@ class PushScheduler {
         final items =
             List<ContentItem>.from(contentByProduct[lp.productId] ?? const [])
               ..sort((a, b) => a.seq.compareTo(b.seq));
+
+        // ✅ 檢測是否全部完成
+        if (isAllLearned(items: items, savedMap: savedMap)) {
+          // 記錄已完成的商品（供後續自動暫停）
+          outCompletedProductIds?.add(lp.productId);
+          // 跳過該商品，不再產生推播任務
+          continue;
+        }
 
         // ✅ 階段 10：推播改為優先待學習（preferUnlearned）
         // 一律使用 preferUnlearned，不再依各產品 contentMode
