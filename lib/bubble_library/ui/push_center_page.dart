@@ -8,7 +8,6 @@ import '../notifications/notification_service.dart';
 import '../providers/providers.dart';
 import 'push_product_config_page.dart';
 import 'widgets/bubble_card.dart';
-import 'widgets/push_inbox_section.dart';
 import '../../../pages/push_timeline_page.dart';
 import '../../../notifications/push_timeline_provider.dart';
 import '../../theme/app_tokens.dart';
@@ -240,8 +239,6 @@ class PushCenterPage extends ConsumerWidget {
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (e, _) => Text('products error: $e'),
           ),
-          const SizedBox(height: 16),
-          const PushInboxSection(),
           const SizedBox(height: 24),
         ],
       ),

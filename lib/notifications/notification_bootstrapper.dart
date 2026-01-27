@@ -5,8 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../bubble_library/providers/providers.dart';
 import '../bubble_library/notifications/notification_service.dart';
 import '../bubble_library/notifications/notification_scheduler.dart';
-import 'notification_inbox_store.dart';
-import 'notification_inbox_provider.dart';
+import 'push_exclusion_store.dart';
 import 'push_timeline_provider.dart';
 
 class NotificationBootstrapper extends ConsumerStatefulWidget {
@@ -55,15 +54,9 @@ class _NotificationBootstrapperState extends ConsumerState<NotificationBootstrap
       await NotificationService.processPendingDismisses(_currentUid!);
       
       // ✅ 掃描過期通知（5 分鐘標準）
-      await NotificationInboxStore.sweepMissed(_currentUid!);
-      
-      // ✅ 額外處理：檢查已過期但還沒到 5 分鐘的通知
-      // 這些通知可能是用戶滑掉但回調沒觸發的情況
-      await NotificationInboxStore.sweepExpiredButNotMissed(_currentUid!);
+      await PushExclusionStore.sweepExpired(_currentUid!);
       
       if (mounted) {
-        ref.invalidate(inboxItemsProvider);
-        ref.invalidate(inboxUnreadCountProvider);
         ref.invalidate(upcomingTimelineProvider);
         ref.invalidate(scheduledCacheProvider);
       }
@@ -84,75 +77,72 @@ class _NotificationBootstrapperState extends ConsumerState<NotificationBootstrap
 
     // 未登入：重置
     if (uid == null) {
-      _configured = false;
-      _sweepTimer?.cancel();
-      _sweepTimer = null;
-      _currentUid = null;
+      if (_configured) {
+        _configured = false;
+        _sweepTimer?.cancel();
+        _sweepTimer = null;
+        _currentUid = null;
+      }
       return widget.child;
     }
 
-    // 登入後：配置回調（可以多次調用 configure）
+    // 登入後：配置回調（只在首次或 uid 變化時執行）
     if (!_configured || _currentUid != uid) {
-      _configured = true;
-      _currentUid = uid;
+      // ✅ 使用 WidgetsBinding.instance.addPostFrameCallback 確保只在首次渲染後執行
+      // 避免在 build 方法中觸發 state 變化
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        
+        _configured = true;
+        _currentUid = uid;
 
-      // 配置 NotificationService 的狀態變化回調
-      // 注意：configure 可以多次調用，不會覆蓋 onLearned/onLater
-      final ns = NotificationService();
-      ns.configure(
-        onStatusChanged: () {
-          // ✅ 通知狀態變化時刷新所有相關 UI
-          if (mounted) {
-            ref.invalidate(inboxItemsProvider);
-            ref.invalidate(inboxUnreadCountProvider);
-            ref.invalidate(upcomingTimelineProvider);
-            ref.invalidate(scheduledCacheProvider);
-          }
-        },
-        onReschedule: () async {
-          // ✅ 重排未來 3 天
+        // 配置 NotificationService 的狀態變化回調
+        // 注意：configure 可以多次調用，不會覆蓋 onLearned
+        final ns = NotificationService();
+        ns.configure(
+          onStatusChanged: () {
+            // ✅ 通知狀態變化時刷新相關 UI
+            if (mounted) {
+              ref.invalidate(upcomingTimelineProvider);
+              ref.invalidate(scheduledCacheProvider);
+            }
+          },
+          onReschedule: () async {
+            // ✅ 重排未來 3 天
+            try {
+              // ✅ 使用統一排程入口（避免爆炸）
+              final scheduler = ref.read(notificationSchedulerProvider);
+              await scheduler.schedule(
+                ref: ref,
+                days: 3,
+                source: 'notification_bootstrapper',
+              );
+            } catch (e) {
+              debugPrint('❌ onReschedule error: $e');
+            }
+          },
+        );
+
+        // ✅ 定期掃描過期通知（每 2 分鐘）
+        _sweepTimer?.cancel();
+        _sweepTimer = Timer.periodic(const Duration(minutes: 2), (_) async {
+          if (!mounted || _currentUid == null) return;
           try {
-            // ✅ 使用統一排程入口（避免爆炸）
-            final scheduler = ref.read(notificationSchedulerProvider);
-            await scheduler.schedule(
-              ref: ref,
-              days: 3,
-              source: 'notification_bootstrapper',
-            );
+            await PushExclusionStore.sweepExpired(_currentUid!);
           } catch (e) {
-            debugPrint('❌ onReschedule error: $e');
+            debugPrint('❌ sweepExpired error: $e');
           }
-        },
-      );
+        });
 
-      // ✅ 定期掃描過期通知（每 2 分鐘）
-      _sweepTimer?.cancel();
-      _sweepTimer = Timer.periodic(const Duration(minutes: 2), (_) async {
-        if (!mounted || _currentUid == null) return;
-        try {
-          await NotificationInboxStore.sweepMissed(_currentUid!);
-          // 刷新 UI
-          if (mounted) {
-            ref.invalidate(inboxItemsProvider);
-            ref.invalidate(inboxUnreadCountProvider);
+        // ✅ 立即執行一次掃描
+        Future.microtask(() async {
+          if (!mounted || uid == null) return;
+          try {
+            await PushExclusionStore.sweepExpired(uid);
+          } catch (e) {
+            debugPrint('❌ Initial sweepExpired error: $e');
           }
-        } catch (e) {
-          debugPrint('❌ sweepMissed error: $e');
-        }
-      });
-
-      // ✅ 立即執行一次掃描
-      scheduleMicrotask(() async {
-        if (!mounted || uid == null) return;
-        try {
-          await NotificationInboxStore.sweepMissed(uid);
-          if (mounted) {
-            ref.invalidate(inboxItemsProvider);
-            ref.invalidate(inboxUnreadCountProvider);
-          }
-        } catch (e) {
-          debugPrint('❌ Initial sweepMissed error: $e');
-        }
+        });
       });
     }
 

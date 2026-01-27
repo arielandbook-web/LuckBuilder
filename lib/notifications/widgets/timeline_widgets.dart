@@ -172,13 +172,10 @@ Widget tlTimelineRow({
                         if ((saved?.learned ?? false))
                           tlTag(context, '已學會', Icons.check_circle),
                         if ((saved?.favorite ?? false)) tlTag(context, '收藏', Icons.star),
-                        if ((saved?.reviewLater ?? false))
-                          tlTag(context, '稍後', Icons.schedule),
                       ],
                     ),
                     if ((saved?.learned ?? false) ||
-                        (saved?.favorite ?? false) ||
-                        (saved?.reviewLater ?? false))
+                        (saved?.favorite ?? false))
                       const SizedBox(height: 8),
                     Text(title,
                         style: const TextStyle(

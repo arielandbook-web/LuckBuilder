@@ -567,9 +567,12 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 
                   return ListView(
                     children: [
-                      SearchHistorySection(
-                        key: _historyKey,
-                        onTapQuery: (q) => _submitSearch(q),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                        child: SearchHistorySection(
+                          key: _historyKey,
+                          onTapQuery: (q) => _submitSearch(q),
+                        ),
                       ),
                       SearchForYouSection(
                         keywords: forYou,
@@ -581,8 +584,11 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                         onRefresh: _shuffleTrends,
                         onTap: (q) => _submitSearch(q),
                       ),
-                      SearchSuggestionsSection(
-                        onTap: (q) => _submitSearch(q),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                        child: SearchSuggestionsSection(
+                          onTap: (q) => _submitSearch(q),
+                        ),
                       ),
                       const SizedBox(height: 24),
                     ],

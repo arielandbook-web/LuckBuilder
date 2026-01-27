@@ -160,25 +160,67 @@ class LibraryRepo {
     required String uid,
     required String productId,
     required List<String> contentItemIds,
+    String? topicId,
   }) async {
-    final batch = _db.batch();
+    // Firestore batch 有 500 个操作的限制，需要分批处理
+    const batchSize = 450;
+    var currentBatch = _db.batch();
+    var operationCount = 0;
+    final batches = <WriteBatch>[currentBatch];
 
     // 清除所有 saved_items 的 learned 狀態
     for (final contentItemId in contentItemIds) {
       final docRef = _db
           .collection(FirestorePaths.userSavedItems(uid))
           .doc(contentItemId);
-      batch.set(docRef, {
+      currentBatch.set(docRef, {
         'learned': false,
         'learnedAt': null,
       }, SetOptions(merge: true));
+      operationCount++;
+
+      // 清除 contentState（學習歷史）
+      final contentStateRef = _db
+          .collection('users')
+          .doc(uid)
+          .collection('contentState')
+          .doc(contentItemId);
+      currentBatch.delete(contentStateRef);
+      operationCount++;
+
+      if (operationCount >= batchSize) {
+        currentBatch = _db.batch();
+        batches.add(currentBatch);
+        operationCount = 0;
+      }
+    }
+
+    // 重置 topicProgress（如果有 topicId）
+    if (topicId != null && topicId.isNotEmpty) {
+      final topicProgressRef = _db
+          .collection('users')
+          .doc(uid)
+          .collection('topicProgress')
+          .doc(topicId);
+      currentBatch.set(topicProgressRef, {
+        'topicId': topicId,
+        'nextPushOrder': 1,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      operationCount++;
+
+      if (operationCount >= batchSize) {
+        currentBatch = _db.batch();
+        batches.add(currentBatch);
+        operationCount = 0;
+      }
     }
 
     // 重置 library_products 的進度
     final productRef = _db
         .collection(FirestorePaths.userLibraryProducts(uid))
         .doc(productId);
-    batch.set(productRef, {
+    currentBatch.set(productRef, {
       'progress': {
         'nextSeq': 1,
         'learnedCount': 0,
@@ -186,7 +228,9 @@ class LibraryRepo {
       'completedAt': null, // 清除完成標記
       'pushEnabled': true, // 重新啟用推播
     }, SetOptions(merge: true));
+    operationCount++;
 
-    await batch.commit();
+    // 提交所有批次
+    await Future.wait(batches.map((b) => b.commit()));
   }
 }

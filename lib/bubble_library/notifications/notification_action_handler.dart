@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import '../../notifications/notification_inbox_store.dart';
+import '../../notifications/push_exclusion_store.dart';
 import '../../services/progress_service.dart';
 
 /// 通知動作處理器（統一入口）
@@ -125,12 +125,8 @@ class NotificationActionHandler {
       return;
     }
 
-    // ✅ 標記為 missed，加入收件匣
-    await NotificationInboxStore.markMissedByContentItemId(
-      uid,
-      productId: productId,
-      contentItemId: contentId,
-    );
+    // ✅ 標記為 missed
+    await PushExclusionStore.markMissed(uid, contentId);
 
     // ✅ 更新進度狀態
     await _progressService.markDismissed(

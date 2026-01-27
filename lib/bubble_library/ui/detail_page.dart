@@ -8,8 +8,8 @@ import '../models/content_item.dart';
 import '../models/user_library.dart';
 import 'widgets/bubble_card.dart';
 import '../../../theme/app_tokens.dart';
-import '../notifications/bubble_action_handler.dart';
 import '../../notifications/favorite_sentences_store.dart';
+import '../../services/learning_progress_service.dart';
 
 class DetailPage extends ConsumerWidget {
   final String contentItemId;
@@ -178,92 +178,50 @@ class DetailPage extends ConsumerWidget {
                   ),
                   const SizedBox(height: 12),
 
-                  Row(
-                    children: [
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: () async {
-                            // 獲取 product 和 topicId
-                            final productsMap = await ref.read(productsMapProvider.future);
-                            final product = productsMap[item.productId];
-                            if (product == null) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('無法獲取產品資訊')),
-                                );
-                              }
-                              return;
-                            }
-<<<<<<< HEAD
-                            
-                            final progress = LearningProgressService();
-                            try {
-                              await progress.markLearnedAndAdvance(
-                                topicId: product.topicId,
-                                contentId: item.id,
-                                pushOrder: item.pushOrder,
-                                source: 'detail_page',
-                              );
-                              // ✅ 刷新 UI（savedItemsProvider 是 StreamProvider，會自動更新）
-                              // 但為確保即時性，手動 invalidate
-                              ref.invalidate(savedItemsProvider);
-                              ref.invalidate(libraryProductsProvider);
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('已標記為完成')),
-                                );
-                              }
-                          },
-                          icon: const Icon(Icons.check),
-                          label: const Text('完成'),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () async {
-                            // 獲取 product 和 topicId
-                            final productsMap = await ref.read(productsMapProvider.future);
-                            final product = productsMap[item.productId];
-                            if (product == null) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('無法獲取產品資訊')),
-                                );
-                              }
-                              return;
-                            }
-<<<<<<< HEAD
-                            
-                            final progress = LearningProgressService();
-                            try {
-                              await progress.snoozeContent(
-                                topicId: product.topicId,
-                                contentId: item.id,
-                                pushOrder: item.pushOrder,
-                                duration: const Duration(hours: 6),
-                                source: 'detail_page',
-                              );
-                              // ✅ 刷新 UI
-                              ref.invalidate(savedItemsProvider);
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('已延後 6 小時')),
-                                );
-                              }
-                            } catch (e) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('操作失敗: $e')),
-                                );
-                              }
-                            }
-                          },
-                          icon: const Icon(Icons.schedule),
-                          label: const Text('稍候再學'),
-                        ),
-                      ),
-                    ],
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () async {
+                        // 獲取 product 和 topicId
+                        final productsMap = await ref.read(productsMapProvider.future);
+                        final product = productsMap[item.productId];
+                        if (product == null) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('無法獲取產品資訊')),
+                            );
+                          }
+                          return;
+                        }
+                        
+                        final progress = LearningProgressService();
+                        try {
+                          await progress.markLearnedAndAdvance(
+                            topicId: product.topicId,
+                            contentId: item.id,
+                            pushOrder: item.pushOrder,
+                            source: 'detail_page',
+                          );
+                          // ✅ 刷新 UI（savedItemsProvider 是 StreamProvider，會自動更新）
+                          // 但為確保即時性，手動 invalidate
+                          ref.invalidate(savedItemsProvider);
+                          ref.invalidate(libraryProductsProvider);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('已標記為完成')),
+                            );
+                          }
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('操作失敗: $e')),
+                            );
+                          }
+                        }
+                      },
+                      icon: const Icon(Icons.check),
+                      label: const Text('完成'),
+                    ),
                   ),
                   const SizedBox(height: 12),
 

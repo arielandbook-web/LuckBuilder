@@ -13,8 +13,8 @@ import 'push_scheduler.dart';
 // ✅ 新增：真排序（日常順序）+ skip next（本機）
 import '../../notifications/daily_routine_store.dart';
 import '../../notifications/skip_next_store.dart';
-// ✅ 新增：排程時寫入 Inbox（本機真資料）
-import '../../notifications/notification_inbox_store.dart';
+// ✅ 新增：推送排除存储（本機）
+import '../../notifications/push_exclusion_store.dart';
 // ✅ 新增：排程快取同步
 import 'scheduled_push_cache.dart';
 import '../../notifications/push_timeline_provider.dart';
@@ -60,9 +60,9 @@ class PushOrchestrator {
   }) async {
     final uid = ref.read(uidProvider);
 
-    // ✅ 先執行 sweepMissed，確保已過期的排程被移到 missed 列表
+    // ✅ 先執行 sweepExpired，確保已過期的排程被標記為錯過
     // 這樣可以避免重新排程已過期但未開啟的內容
-    await NotificationInboxStore.sweepMissed(uid);
+    await PushExclusionStore.sweepExpired(uid);
 
     // ✅ 強制刷新所有相關 provider，確保讀到最新狀態
     if (kDebugMode) {
@@ -96,9 +96,9 @@ class PushOrchestrator {
       savedMap = {};
     }
 
-    // ✅ Missed 清單（本機）：滑掉/錯過的內容，重排時應排除
-    final missedContentItemIds =
-        await NotificationInboxStore.loadMissedContentItemIds(uid);
+    // ✅ 排除清單（本機）：已讀 + 滑掉/錯過的內容，重排時應排除
+    final excludedContentItemIds =
+        await PushExclusionStore.getExcludedContentItemIds(uid);
 
     // ✅ Skip 清單（本機）：全域 + scoped(每商品)
     final globalSkip = await SkipNextStore.load(uid);
@@ -210,7 +210,7 @@ class PushOrchestrator {
       iosSafeMaxScheduled: 60,
       productOrder: productOrder,
       outCompletedProductIds: completedProductIds,
-      missedContentItemIds: missedContentItemIds,
+      missedContentItemIds: excludedContentItemIds,
     );
 
     // ✅ 診斷：顯示排程結果
@@ -239,7 +239,7 @@ class PushOrchestrator {
     final ns = NotificationService();
     final cache = ScheduledPushCache();
     
-    // ✅ 清除排程前，不需再次執行 sweepMissed（已在函數開頭執行過）
+    // ✅ 清除排程前，不需再次執行 sweepExpired（已在函數開頭執行過）
     await ns.cancelAll();
     await cache.clear(); // ✅ 同步清除快取
 
@@ -307,14 +307,11 @@ class PushOrchestrator {
         );
 
         // ✅ 排程成功後，同步寫入兩個快取
-        // 1. NotificationInboxStore（收件匣）
-        await NotificationInboxStore.upsertScheduled(
-          uid: uid,
-          productId: t.productId,
-          contentItemId: t.item.id,
-          when: t.when,
-          title: title,
-          body: body,
+        // 1. PushExclusionStore（記錄排程時間，用於排除和過期判斷）
+        await PushExclusionStore.recordScheduled(
+          uid,
+          t.item.id,
+          t.when,
         );
         
         // 2. ScheduledPushCache（排程快取，用於時間表顯示，保存 notificationId）
@@ -326,35 +323,23 @@ class PushOrchestrator {
           notificationId: notificationId,
         ));
 
-        // ✅ 推播到最後一則時：排程「已完成 XXX 產品的學習，恭喜！」通知（每產品一次）
+        // ✅ 推播到最後一則時：排程「已完成 XXX 產品的學習，恭喜！」橫幅通知（最後一則完成後 2 分鐘顯示，每產品一次）
         if (t.isLastInProduct && !completionScheduledForProduct.contains(t.productId)) {
           completionScheduledForProduct.add(t.productId);
-          final completionWhen = t.when.add(const Duration(minutes: 1));
-          const completionTitle = '學習完成';
-          final completionBody = '已完成 $productTitle 的學習，恭喜！';
           try {
-            final completionNotificationId = idSeed++;
-            await ns.schedule(
-              id: completionNotificationId,
-              when: completionWhen,
-              title: completionTitle,
-              body: completionBody,
-              payload: {
-                'type': 'completion',
-                'uid': uid,
-                'productId': t.productId,
-              },
+            // 排程完成通知（最後一則完成後 2 分鐘顯示）
+            await ns.scheduleCompletionBanner(
+              productTitle: productTitle,
+              productId: t.productId,
+              uid: uid,
+              lastItemScheduledTime: t.when,
             );
-            await cache.add(ScheduledPushEntry(
-              when: completionWhen,
-              title: completionTitle,
-              body: completionBody,
-              payload: {'type': 'completion', 'productId': t.productId},
-              notificationId: completionNotificationId,
-            ));
+            if (kDebugMode) {
+              debugPrint('🎉 完成橫幅通知已排程：$productTitle (將於 ${t.when.add(const Duration(minutes: 2))} 顯示)');
+            }
           } catch (e) {
             if (kDebugMode) {
-              debugPrint('❌ 完成通知排程失敗 (${t.productId}): $e');
+              debugPrint('❌ 完成橫幅通知排程失敗 (${t.productId}): $e');
             }
           }
         }
@@ -380,7 +365,8 @@ class PushOrchestrator {
     ref.invalidate(scheduledCacheProvider);
     ref.invalidate(upcomingTimelineProvider);
 
-    // ✅ 處理已完成的商品：自動暫停並發送恭喜通知
+    // ✅ 處理已完成的商品：自動暫停推播
+    // 注意：完成通知已在上面（第 326-344 行）通過 showCompletionBanner 立即顯示，這裡不再重複發送
     if (completedProductIds.isNotEmpty) {
       final repo = ref.read(libraryRepoProvider);
       for (final productId in completedProductIds) {
@@ -391,23 +377,8 @@ class PushOrchestrator {
             'completedAt': FieldValue.serverTimestamp(),
           });
           
-          // 推送恭喜通知（3秒後推送，確保能立即收到）
-          final product = productsMap[productId];
-          final productTitle = product?.title ?? productId;
-          final notifyId = DateTime.now().millisecondsSinceEpoch.remainder(1000000);
-          await ns.schedule(
-            id: notifyId,
-            when: DateTime.now().add(const Duration(seconds: 3)),
-            title: '恭喜完成！🎉',
-            body: '您已完成「$productTitle」的所有內容學習！\n點擊查看推播設定重新開始。',
-            payload: {
-              'type': 'completion',
-              'productId': productId,
-            },
-          );
-          
           if (kDebugMode) {
-            debugPrint('✅ 商品已完成：$productId - 自動暫停並發送恭喜通知');
+            debugPrint('✅ 商品已完成：$productId - 自動暫停推播');
           }
         } catch (e) {
           if (kDebugMode) {

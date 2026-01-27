@@ -6,7 +6,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'scheduled_push_cache.dart';
-import '../../notifications/notification_inbox_store.dart';
+import '../../notifications/push_exclusion_store.dart';
 import 'push_orchestrator.dart';
 
 class NotificationService {
@@ -22,37 +22,40 @@ class NotificationService {
 
   // ---- iOS Action IDs ----
   static const String iosCategoryBubbleActions = 'bubble_actions_v2';
+  static const String iosCategoryCompletionActions = 'completion_actions_v1';
   static const String actionLearned = 'ACTION_LEARNED';
-  static const String actionLater = 'ACTION_LATER';
+  static const String actionRestart = 'ACTION_RESTART';
 
   // 保留舊的常數以向後兼容（但不再使用）
+  @Deprecated('No longer used - snooze feature removed')
+  static const String actionLater = 'ACTION_LATER';
   @Deprecated('Use actionLearned instead')
   static const String actionFavorite = 'ACTION_FAVORITE';
-  @Deprecated('Use actionLater instead')
+  @Deprecated('No longer used')
   static const String actionSnooze = 'ACTION_SNOOZE';
   @Deprecated('No longer used')
   static const String actionDisableProduct = 'ACTION_DISABLE_PRODUCT';
 
   // （可選）回調函數，用於處理 action 點擊
   Future<void> Function(Map<String, dynamic> payload)? _onLearned;
-  Future<void> Function(Map<String, dynamic> payload)? _onLater;
+  Future<void> Function(Map<String, dynamic> payload)? _onRestart;
   
   // 狀態變化回調：用於刷新 UI
   void Function()? _onStatusChanged;
   
-  // 重排回調：用於在完成/稍候再學後重排
+  // 重排回調：用於在完成後重排
   Future<void> Function()? _onReschedule;
 
   /// 配置 action 回調（可選）
   /// 可以多次調用，後設的回調會覆蓋先前的
   void configure({
     Future<void> Function(Map<String, dynamic> payload)? onLearned,
-    Future<void> Function(Map<String, dynamic> payload)? onLater,
+    Future<void> Function(Map<String, dynamic> payload)? onRestart,
     void Function()? onStatusChanged,
     Future<void> Function()? onReschedule,
   }) {
     if (onLearned != null) _onLearned = onLearned;
-    if (onLater != null) _onLater = onLater;
+    if (onRestart != null) _onRestart = onRestart;
     if (onStatusChanged != null) _onStatusChanged = onStatusChanged;
     if (onReschedule != null) _onReschedule = onReschedule;
   }
@@ -91,18 +94,24 @@ class NotificationService {
                 DarwinNotificationActionOption.foreground,
               },
             ),
-            DarwinNotificationAction.plain(
-              actionLater,
-              '稍候再學',
-              options: <DarwinNotificationActionOption>{
-                DarwinNotificationActionOption.foreground,
-              },
-            ),
           ],
           // ✅ 啟用自訂 dismiss action，當用戶滑掉通知時會收到回調
           options: <DarwinNotificationCategoryOption>{
             DarwinNotificationCategoryOption.customDismissAction,
           },
+        ),
+        // ✅ 完成通知的 category（包含重新學習按鈕）
+        DarwinNotificationCategory(
+          iosCategoryCompletionActions,
+          actions: <DarwinNotificationAction>[
+            DarwinNotificationAction.plain(
+              actionRestart,
+              '重新學習',
+              options: <DarwinNotificationActionOption>{
+                DarwinNotificationActionOption.foreground,
+              },
+            ),
+          ],
         ),
       ],
     );
@@ -121,14 +130,10 @@ class NotificationService {
         final cid = (data['contentItemId'] ?? '').toString();
         if (pid.isNotEmpty && cid.isNotEmpty) {
           // ✅ 先掃描過期的，確保狀態一致
-          await NotificationInboxStore.sweepMissed(uid);
+          await PushExclusionStore.sweepExpired(uid);
           
           // ✅ 標記為已讀（opened 優先於 missed）
-          await NotificationInboxStore.markOpened(
-            uid,
-            productId: pid,
-            contentItemId: cid,
-          );
+          await PushExclusionStore.markOpened(uid, cid);
           
           // ✅ 刷新 UI
           _onStatusChanged?.call();
@@ -202,14 +207,10 @@ class NotificationService {
             final cid = (payload['contentItemId'] ?? '').toString();
             if (pid.isNotEmpty && cid.isNotEmpty) {
               // ✅ 檢查是否已經開啟過（opened 優先於 missed）
-              final isOpened = await NotificationInboxStore.isOpenedGlobal(uid, cid);
+              final isOpened = await PushExclusionStore.isOpened(uid, cid);
               if (!isOpened) {
                 // 立即標記為錯失（不等待 5 分鐘）
-                await NotificationInboxStore.markMissedByContentItemId(
-                  uid,
-                  productId: pid,
-                  contentItemId: cid,
-                );
+                await PushExclusionStore.markMissed(uid, cid);
                 // ✅ 立刻重排：避免下一輪又排到同一則
                 try {
                   await _onReschedule?.call();
@@ -243,17 +244,13 @@ class NotificationService {
             }
             
             // 1) 先掃描過期的，確保狀態一致
-            await NotificationInboxStore.sweepMissed(uid);
+            await PushExclusionStore.sweepExpired(uid);
             
             // 2) 標記已讀（opened 優先於 missed）
             final pid = (payload['productId'] ?? '').toString();
             final cid = (payload['contentItemId'] ?? '').toString();
             if (pid.isNotEmpty && cid.isNotEmpty) {
-              await NotificationInboxStore.markOpened(
-                uid,
-                productId: pid,
-                contentItemId: cid,
-              );
+              await PushExclusionStore.markOpened(uid, cid);
             }
             
             // 3) 調用學習完成回調
@@ -277,30 +274,19 @@ class NotificationService {
             return;
           }
 
-          // 點按鍵：之後再學
-          if (actionId == actionLater) {
+          // 點按鍵：重新學習（完成通知）
+          if (actionId == actionRestart) {
             if (kDebugMode) {
-              debugPrint('🔔 actionLater: payload=$payload');
+              debugPrint('🔄 actionRestart: payload=$payload');
             }
             
-            // 1) 調用稍候再學回調
-            if (_onLater != null) {
-              await _onLater!(payload);
+            // 調用重新學習回調
+            if (_onRestart != null) {
+              await _onRestart!(payload);
             } else if (onSelect != null) {
               onSelect(resp.payload, actionId);
             }
             
-            // 2) 重排未來 3 天
-            try {
-              await _onReschedule?.call();
-            } catch (e) {
-              if (kDebugMode) {
-                debugPrint('❌ _onReschedule error: $e');
-              }
-            }
-            
-            // 3) 刷新 UI
-            _onStatusChanged?.call();
             return;
           }
 
@@ -460,17 +446,12 @@ class NotificationService {
       for (final entry in pending) {
         final parts = entry.split('|');
         if (parts.length == 2) {
-          final productId = parts[0];
           final contentItemId = parts[1];
 
           // 檢查是否已開啟
-          final isOpened = await NotificationInboxStore.isOpenedGlobal(uid, contentItemId);
+          final isOpened = await PushExclusionStore.isOpened(uid, contentItemId);
           if (!isOpened) {
-            await NotificationInboxStore.markMissedByContentItemId(
-              uid,
-              productId: productId,
-              contentItemId: contentItemId,
-            );
+            await PushExclusionStore.markMissed(uid, contentItemId);
             
             if (kDebugMode) {
               debugPrint('✅ 已處理滑掉事件：$contentItemId');
@@ -507,6 +488,21 @@ class NotificationService {
         await _cache.removeByNotificationId(entry.notificationId!);
         if (kDebugMode) {
           debugPrint('🔔 已取消通知 (contentItemId: $contentItemId, id: ${entry.notificationId})');
+        }
+      }
+    }
+  }
+
+  /// 根據 productId 取消該產品所有已排程的通知（用於重新學習）
+  Future<void> cancelByProductId(String productId) async {
+    final entries = await _cache.loadSortedUpcoming();
+    for (final entry in entries) {
+      final pid = entry.payload['productId'] as String?;
+      if (pid == productId && entry.notificationId != null) {
+        await cancel(entry.notificationId!);
+        await _cache.removeByNotificationId(entry.notificationId!);
+        if (kDebugMode) {
+          debugPrint('🔔 已取消通知 (productId: $productId, id: ${entry.notificationId})');
         }
       }
     }
@@ -581,6 +577,151 @@ class NotificationService {
     ));
   }
 
+  /// 立即顯示完成通知（橫幅通知）
+  Future<void> showCompletionBanner({
+    required String productTitle,
+    required String productId,
+    required String uid,
+  }) async {
+    if (kDebugMode) {
+      debugPrint('🎉 showCompletionBanner: $productTitle');
+    }
+
+    // iOS 完成通知：包含重新學習按鈕
+    const iosDetails = DarwinNotificationDetails(
+      categoryIdentifier: iosCategoryCompletionActions,
+      presentAlert: true,
+      presentSound: true,
+      presentBadge: true,
+    );
+
+    // Android 完成通知：包含重新學習按鈕
+    const androidDetails = AndroidNotificationDetails(
+      'completion_channel',
+      'Completion',
+      channelDescription: 'Product completion notifications',
+      importance: Importance.max,
+      priority: Priority.high,
+      actions: [
+        AndroidNotificationAction(actionRestart, '重新學習'),
+      ],
+    );
+
+    const details = NotificationDetails(
+      iOS: iosDetails,
+      android: androidDetails,
+    );
+
+    final payload = <String, dynamic>{
+      'type': 'completion',
+      'uid': uid,
+      'productId': productId,
+    };
+
+    try {
+      // 使用當前時間戳作為 ID，確保每次都是新的通知
+      final notificationId = DateTime.now().millisecondsSinceEpoch.remainder(1000000);
+      await plugin.show(
+        notificationId,
+        '恭喜完成！🎉',
+        '已完成「$productTitle」的所有內容學習！',
+        details,
+        payload: jsonEncode(payload),
+      );
+      if (kDebugMode) {
+        debugPrint('🎉 ✅ 完成通知發送成功');
+      }
+    } catch (e, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('🎉 ❌ 完成通知發送失敗: $e');
+        debugPrint('Stack trace: $stackTrace');
+      }
+      rethrow;
+    }
+  }
+
+  /// 排程完成通知（延遲 2 分鐘顯示）
+  Future<void> scheduleCompletionBanner({
+    required String productTitle,
+    required String productId,
+    required String uid,
+    required DateTime lastItemScheduledTime,
+  }) async {
+    if (kDebugMode) {
+      debugPrint('🎉 scheduleCompletionBanner: $productTitle (2 分鐘後顯示)');
+    }
+
+    // 計算 2 分鐘後的時間
+    final when = lastItemScheduledTime.add(const Duration(minutes: 2));
+    
+    // 確保時間在未來（如果最後一則的時間已經過去，則使用當前時間 + 2 分鐘）
+    final now = DateTime.now();
+    final scheduledTime = when.isAfter(now) ? when : now.add(const Duration(minutes: 2));
+
+    // iOS 完成通知：包含重新學習按鈕
+    const iosDetails = DarwinNotificationDetails(
+      categoryIdentifier: iosCategoryCompletionActions,
+      presentAlert: true,
+      presentSound: true,
+      presentBadge: true,
+    );
+
+    // Android 完成通知：包含重新學習按鈕
+    const androidDetails = AndroidNotificationDetails(
+      'completion_channel',
+      'Completion',
+      channelDescription: 'Product completion notifications',
+      importance: Importance.max,
+      priority: Priority.high,
+      actions: [
+        AndroidNotificationAction(actionRestart, '重新學習'),
+      ],
+    );
+
+    final payload = <String, dynamic>{
+      'type': 'completion',
+      'uid': uid,
+      'productId': productId,
+    };
+
+    try {
+      // 使用產品 ID 的 hash 作為通知 ID，確保同一產品只會有一個完成通知
+      final notificationId = (productId.hashCode.abs() % 900000) + 100000;
+      
+      await plugin.zonedSchedule(
+        notificationId,
+        '恭喜完成！🎉',
+        '已完成「$productTitle」的所有內容學習！',
+        tz.TZDateTime.from(scheduledTime, tz.local),
+        NotificationDetails(android: androidDetails, iOS: iosDetails),
+        payload: jsonEncode(payload),
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        matchDateTimeComponents: null,
+      );
+      
+      // ✅ 同步更新 cache（保存 notification ID，以便重新學習時能正確取消）
+      await _cache.add(ScheduledPushEntry(
+        when: scheduledTime,
+        title: '恭喜完成！🎉',
+        body: '已完成「$productTitle」的所有內容學習！',
+        payload: payload,
+        notificationId: notificationId,
+      ));
+      
+      if (kDebugMode) {
+        debugPrint('🎉 ✅ 完成通知已排程：$productTitle (將於 $scheduledTime 顯示)');
+      }
+    } catch (e, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('🎉 ❌ 完成通知排程失敗: $e');
+        debugPrint('Stack trace: $stackTrace');
+      }
+      rethrow;
+    }
+  }
+
   /// 推播中心「試播一則」會呼叫這個
   Future<void> showTestBubbleNotification() async {
     if (kDebugMode) {
@@ -604,11 +745,10 @@ class NotificationService {
       priority: Priority.high,
       actions: [
         AndroidNotificationAction(actionLearned, '完成'),
-        AndroidNotificationAction(actionLater, '稍候再學'),
       ],
     );
 
-    final details = NotificationDetails(
+    const details = NotificationDetails(
       iOS: iosDetails,
       android: androidDetails,
     );
@@ -627,7 +767,7 @@ class NotificationService {
       await plugin.show(
         999001, // 固定 id（測試時覆蓋同一則）
         '學習泡泡🫧 30 秒',
-        '點「完成」會換下一則；點「稍候再學」會延後。',
+        '點「完成」標記為已學習。',
         details,
         payload: jsonEncode(payload),
       );

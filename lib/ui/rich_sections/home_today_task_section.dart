@@ -11,7 +11,7 @@ import '../../notifications/push_timeline_provider.dart';
 
 import '../../widgets/rich_sections/user_learning_store.dart';
 import '../../bubble_library/ui/product_library_page.dart';
-import '../../notifications/notification_inbox_store.dart';
+import '../../notifications/push_exclusion_store.dart';
 
 /// 今日推播統計（總數、已完成數、下一則）
 class TodayPushStats {
@@ -305,12 +305,7 @@ class _HomeTodayTaskSectionState extends ConsumerState<HomeTodayTaskSection> {
                                           // 標記推播為已開啟
                                           if (pid.isNotEmpty && cid.isNotEmpty) {
                                             final uid = ref.read(uidProvider);
-                                            await NotificationInboxStore
-                                                .markOpened(
-                                              uid,
-                                              productId: pid,
-                                              contentItemId: cid,
-                                            );
+                                            await PushExclusionStore.markOpened(uid, cid);
                                           }
 
                                           // ✅ 刷新今日推播統計

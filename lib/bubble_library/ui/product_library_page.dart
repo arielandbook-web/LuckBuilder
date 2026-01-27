@@ -9,6 +9,7 @@ import 'detail_page.dart';
 import 'widgets/bubble_card.dart';
 import '../../../theme/app_tokens.dart';
 import '../../widgets/rich_sections/user_learning_store.dart';
+import '../notifications/scheduled_push_cache.dart';
 
 class ProductLibraryPage extends ConsumerStatefulWidget {
   final String productId;
@@ -155,6 +156,12 @@ class _ProductLibraryPageState extends ConsumerState<ProductLibraryPage> with Wi
 
                         final isTarget = (it.id == widget.initialContentItemId);
 
+                        // ✅ 檢查是否應該顯示紅框（基於完成狀態和下一則推播）
+                        // 只有未完成的內容才需要檢查
+                        final shouldShowRedBorder = (saved?.learned ?? false) == false
+                            ? ref.watch(_shouldShowRedBorderProvider('${widget.productId}|${it.pushOrder}'))
+                            : null;
+
                         // 原本的卡片 widget
                         final original = Padding(
                           padding: const EdgeInsets.only(bottom: 10),
@@ -175,22 +182,76 @@ class _ProductLibraryPageState extends ConsumerState<ProductLibraryPage> with Wi
                         );
 
                         // 可選：目標卡片加一個淡淡外框，讓使用者知道「跳到這張」
+                        // ✅ 未完成且 pushOrder < 下一則推播的卡片加紅框
                         return Container(
                           key: k, // ✅ GlobalKey 要掛在真正的 Element 上，ensureVisible 才抓得到 context
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 250),
-                            padding: const EdgeInsets.symmetric(vertical: 2),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(16),
-                              border: isTarget
-                                  ? Border.all(
-                                      width: 1.5,
-                                      color: Colors.blue.withValues(alpha: 0.5),
-                                    )
-                                  : null,
-                            ),
-                            child: original,
-                          ),
+                          child: shouldShowRedBorder != null
+                              ? shouldShowRedBorder.when(
+                                  data: (showRed) {
+                                    final tokens = context.tokens;
+                                    return AnimatedContainer(
+                                      duration: const Duration(milliseconds: 250),
+                                      padding: const EdgeInsets.symmetric(vertical: 2),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(tokens.cardRadius),
+                                        border: showRed
+                                            ? Border.all(
+                                                width: 2,
+                                                color: Colors.red,
+                                              )
+                                            : isTarget
+                                                ? Border.all(
+                                                    width: 1.5,
+                                                    color: Colors.blue.withValues(alpha: 0.5),
+                                                  )
+                                                : null,
+                                      ),
+                                      child: original,
+                                    );
+                                  },
+                                  loading: () => AnimatedContainer(
+                                    duration: const Duration(milliseconds: 250),
+                                    padding: const EdgeInsets.symmetric(vertical: 2),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: isTarget
+                                          ? Border.all(
+                                              width: 1.5,
+                                              color: Colors.blue.withValues(alpha: 0.5),
+                                            )
+                                          : null,
+                                    ),
+                                    child: original,
+                                  ),
+                                  error: (_, __) => AnimatedContainer(
+                                    duration: const Duration(milliseconds: 250),
+                                    padding: const EdgeInsets.symmetric(vertical: 2),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: isTarget
+                                          ? Border.all(
+                                              width: 1.5,
+                                              color: Colors.blue.withValues(alpha: 0.5),
+                                            )
+                                          : null,
+                                    ),
+                                    child: original,
+                                  ),
+                                )
+                              : AnimatedContainer(
+                                  duration: const Duration(milliseconds: 250),
+                                  padding: const EdgeInsets.symmetric(vertical: 2),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: isTarget
+                                        ? Border.all(
+                                            width: 1.5,
+                                            color: Colors.blue.withValues(alpha: 0.5),
+                                          )
+                                        : null,
+                                  ),
+                                  child: original,
+                                ),
                         );
                       }),
                     ],
@@ -273,13 +334,6 @@ class _ProductLibraryPageState extends ConsumerState<ProductLibraryPage> with Wi
               onPressed: null,
               tooltip: (saved?.favorite ?? false) ? '已收藏' : '未收藏',
             ),
-            IconButton(
-              icon: Icon((saved?.reviewLater ?? false)
-                  ? Icons.schedule
-                  : Icons.schedule_outlined),
-              onPressed: null,
-              tooltip: (saved?.reviewLater ?? false) ? '已稍後再學' : '未稍後',
-            ),
           ],
         ),
       ],
@@ -308,3 +362,40 @@ class _ProductLibraryPageState extends ConsumerState<ProductLibraryPage> with Wi
         },
       );
 }
+
+/// Provider：檢查是否應該顯示紅框（基於完成狀態和下一則推播）
+/// 參數格式：'$productId|$pushOrder'
+/// 邏輯：如果當前內容未完成且 pushOrder < 下一則推播的 pushOrder，則顯示紅框
+final _shouldShowRedBorderProvider = FutureProvider.family<bool, String>((ref, key) async {
+  final parts = key.split('|');
+  if (parts.length != 2) return false;
+  final productId = parts[0];
+  final currentPushOrder = int.tryParse(parts[1]) ?? 0;
+  
+  // ✅ 1. 獲取下一則推播（同一 product 的）
+  final cache = ScheduledPushCache();
+  final upcoming = await cache.loadSortedUpcoming();
+  
+  // 找到同一 productId 的下一則推播（按時間排序，最早的那個）
+  ScheduledPushEntry? nextPush;
+  for (final entry in upcoming) {
+    final payloadProductId = entry.payload['productId']?.toString();
+    if (payloadProductId == productId) {
+      nextPush = entry;
+      break; // 找到第一個就是最早的
+    }
+  }
+  
+  // 如果沒有下一則推播，不顯示紅框
+  if (nextPush == null) return false;
+  
+  // ✅ 2. 獲取下一則推播的 pushOrder
+  final nextPushOrderRaw = nextPush.payload['pushOrder'];
+  final nextPushOrder = nextPushOrderRaw is int
+      ? nextPushOrderRaw
+      : (nextPushOrderRaw is num ? nextPushOrderRaw.toInt() : 0);
+  
+  // ✅ 3. 如果當前 pushOrder < 下一則推播的 pushOrder，且未完成，顯示紅框
+  // 注意：這裡假設當前內容未完成（在調用時已經檢查過 saved?.learned == false）
+  return currentPushOrder < nextPushOrder;
+});

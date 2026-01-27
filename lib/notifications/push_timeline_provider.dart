@@ -8,7 +8,7 @@ import '../bubble_library/providers/providers.dart';
 import '../bubble_library/notifications/scheduled_push_cache.dart';
 import 'skip_next_store.dart';
 import 'daily_routine_store.dart';
-import 'notification_inbox_store.dart';
+import 'push_exclusion_store.dart';
 
 /// 未來 3 天推播時間表（真資料）
 /// - 不會 schedule 通知（只計算）
@@ -36,8 +36,8 @@ final upcomingTimelineProvider = FutureProvider<List<PushTask>>((ref) async {
 
   // ✅ 跳過下一則清單（本機）
   final globalSkip = await SkipNextStore.load(uid);
-  // ✅ Missed 清單（本機）：滑掉/錯過的內容，時間表也要排除
-  final missedContentItemIds = await NotificationInboxStore.loadMissedContentItemIds(uid);
+  // ✅ 排除清單（本機）：已讀 + 滑掉/錯過的內容，時間表也要排除
+  final missedContentItemIds = await PushExclusionStore.getExcludedContentItemIds(uid);
 
   // 建 library map（只保留存在的 product）
   final libMap = <String, UserLibraryProduct>{};

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class UserLearningStore {
@@ -89,5 +90,30 @@ class UserLearningStore {
   Future<void> markLearnedTodayAndGlobal(String productId) async {
     await markLearnedToday(productId);
     await markGlobalLearnedToday();
+  }
+
+  /// 清除該產品的所有學習歷史（用於重新學習）
+  Future<void> clearProductHistory(String productId) async {
+    final sp = await SharedPreferences.getInstance();
+    final allKeys = sp.getKeys();
+    // 格式：learned_v1:{productId}:{YYYYMMDD}
+    final prefix = '$_prefix:$productId:';
+    
+    // 清除所有以該產品為前綴的鍵（所有日期的學習記錄）
+    final keysToRemove = <String>[];
+    for (final key in allKeys) {
+      if (key.startsWith(prefix)) {
+        keysToRemove.add(key);
+      }
+    }
+    
+    // 批量删除
+    for (final key in keysToRemove) {
+      await sp.remove(key);
+    }
+    
+    if (keysToRemove.isNotEmpty && kDebugMode) {
+      debugPrint('🗑️ UserLearningStore.clearProductHistory: 已清除 ${keysToRemove.length} 个学习历史记录');
+    }
   }
 }

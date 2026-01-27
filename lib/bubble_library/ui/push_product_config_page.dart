@@ -5,6 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/providers.dart';
 import '../models/push_config.dart';
 import '../notifications/push_orchestrator.dart';
+import '../notifications/notification_service.dart';
+import '../notifications/notification_scheduler.dart';
+import '../../notifications/push_exclusion_store.dart';
+import '../../widgets/rich_sections/user_learning_store.dart';
 import 'widgets/bubble_card.dart';
 import '../../theme/app_tokens.dart';
 
@@ -430,28 +434,65 @@ class PushProductConfigPage extends ConsumerWidget {
       // 獲取該商品的所有內容
       final contentItems = await ref.read(contentByProductProvider(productId).future);
       final contentItemIds = contentItems.map((e) => e.id).toList();
-
-      // 執行重置
+      
+      // 獲取產品資訊（用於取得 topicId）
+      final productsMap = await ref.read(productsMapProvider.future);
+      final product = productsMap[productId];
+      final topicId = product?.topicId;
+      
+      // ✅ 1. 取消該產品所有已排程的通知（確保舊通知不會干擾）
+      final ns = NotificationService();
+      await ns.cancelByProductId(productId);
+      
+      // ✅ 2. 清除該產品的排除數據（opened, missed, scheduled）
+      await PushExclusionStore.clearProduct(uid, contentItemIds);
+      
+      // ✅ 3. 清除本地學習歷史
+      final userLearningStore = UserLearningStore();
+      await userLearningStore.clearProductHistory(productId);
+      
+      // ✅ 4. 執行重置（清除學習狀態、contentState、topicProgress，重新啟用推播）
       final repo = ref.read(libraryRepoProvider);
       await repo.resetProductProgress(
         uid: uid,
         productId: productId,
         contentItemIds: contentItemIds,
+        topicId: topicId,
       );
-
-      // 刷新 UI
+      
+      // ✅ 5. 刷新 UI 並等待數據更新完成（確保重新排程時讀到最新狀態）
       ref.invalidate(savedItemsProvider);
       ref.invalidate(libraryProductsProvider);
       
-      // 重新排程
-      await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
+      // 等待 provider 更新完成，確保重新排程時讀到清除後的數據
+      try {
+        await ref.read(savedItemsProvider.future);
+        await ref.read(libraryProductsProvider.future);
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('⚠️ 等待 provider 更新失敗: $e');
+        }
+        // 繼續執行，push_orchestrator 內部也會等待
+      }
+      
+      // ✅ 6. 重新排程（使用統一排程入口，確保新的推播正常運作）
+      final scheduler = ref.read(notificationSchedulerProvider);
+      await scheduler.schedule(
+        ref: ref,
+        days: 3,
+        source: 'ui_restart_action',
+        immediate: true,
+      );
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('已重新開始，推播已重新排程')),
+          const SnackBar(content: Text('已重新開始，推播已重新排程，學習歷史已清除')),
         );
       }
     } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ _showRestartDialog error: $e');
+      }
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('重置失敗: $e')),

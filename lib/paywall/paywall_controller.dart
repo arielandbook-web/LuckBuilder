@@ -72,7 +72,7 @@ class PaywallController extends FamilyNotifier<PaywallState, String> {
       await _svc.purchaseProduct(productId);
       state = const PaywallState.unlocked();
     } catch (_) {
-      state = PaywallState.error('購買未完成，請稍後再試');
+      state = const PaywallState.error('購買未完成，請稍後再試');
     }
   }
 
@@ -85,7 +85,7 @@ class PaywallController extends FamilyNotifier<PaywallState, String> {
       state =
           unlocked ? const PaywallState.unlocked() : const PaywallState.locked();
     } catch (_) {
-      state = PaywallState.error('恢復購買失敗，請稍後再試');
+      state = const PaywallState.error('恢復購買失敗，請稍後再試');
     }
   }
 

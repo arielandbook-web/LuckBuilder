@@ -7,7 +7,7 @@ import '../bubble_library/notifications/push_scheduler.dart';
 import '../notifications/skip_next_store.dart';
 import '../notifications/push_timeline_provider.dart';
 import '../bubble_library/ui/product_library_page.dart';
-import 'notification_inbox_store.dart';
+import 'push_exclusion_store.dart';
 
 import 'timeline_meta_mode.dart';
 import 'widgets/timeline_widgets.dart';
@@ -382,12 +382,7 @@ class PushTimelineList extends ConsumerWidget {
                                             ),
                                             onPressed: () async {
                                               // 標記推播為已開啟
-                                              await NotificationInboxStore
-                                                  .markOpened(
-                                                uid,
-                                                productId: productId,
-                                                contentItemId: contentItemId,
-                                              );
+                                              await PushExclusionStore.markOpened(uid, contentItemId);
 
                                               // ignore: use_build_context_synchronously
                                               Navigator.of(context).push(

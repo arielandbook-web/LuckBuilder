@@ -118,6 +118,8 @@ def main():
             "spec4Icon": none_if_nan(r.get("spec4Icon")),
             "trialMode": none_if_nan(r.get("trialMode")),
             "trialLimit": int(r.get("trialLimit")) if not pd.isna(r.get("trialLimit")) else 3,
+            "releaseAtMs": int(r.get("releaseAtMs")) if not pd.isna(r.get("releaseAtMs")) else None,
+            "createdAtMs": int(r.get("createdAtMs")) if not pd.isna(r.get("createdAtMs")) else None,
         }
         prod_writes.append(lambda b, pid=pid, data=data: b.set(db.collection("products").document(pid), data, merge=True))
     commit_in_batches(prod_writes)

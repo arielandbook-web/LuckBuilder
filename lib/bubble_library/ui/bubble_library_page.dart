@@ -20,12 +20,6 @@ import '../../collections/wishlist_provider.dart';
 import '../../pages/product_page.dart';
 import '../../notifications/favorite_sentences_store.dart';
 
-/// 本週完成度（過去 7 天含今天）
-final weeklyCountProvider =
-    FutureProvider.family<int, String>((ref, productId) async {
-  return UserLearningStore().weeklyCount(productId);
-});
-
 enum LibraryView { purchased, wishlist, favorites, history, favoriteSentences }
 
 class BubbleLibraryPage extends ConsumerStatefulWidget {
@@ -39,7 +33,7 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
   LibraryView currentView = LibraryView.purchased;
   DateTime? _lastRescheduleTime;
   
-  Set<String> _selectedProductIds = {};
+  final Set<String> _selectedProductIds = {};
   int _selectedHistoryTab = 0; // 0 = 待學習, 1 = 已學習
 
   @override
@@ -265,24 +259,22 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
         final tokens = ctx.tokens;
         final entry = nextEntryFor(lp.productId);
 
-        // 本週完成度（真資料）
-        final weeklyAsync = ref.watch(weeklyCountProvider(lp.productId));
-        final weeklyText = weeklyAsync.when(
-          data: (c) => '本週完成度：$c/7',
-          loading: () => '本週完成度：…',
-          error: (_, __) => '本週完成度：—',
+        // 獲取該產品的內容總數
+        final contentAsync = ref.watch(contentByProductProvider(lp.productId));
+        final totalItems = contentAsync.maybeWhen(
+          data: (items) => items.length,
+          orElse: () => null,
         );
 
         return LibraryRichCard(
           title: product.title,
-          subtitle: 'Day ${lp.progress.nextSeq}/365',
           coverImageUrl: null,
+          totalItems: totalItems,
           nextPushText: lp.pushEnabled
               ? (entry == null
                   ? '未來 3 天尚未排程'
                   : '下一則：${fmtNextTime(entry.when)}')
               : '推播已關閉',
-          weeklyProgress: weeklyText,
           latestTitle: entry == null ? '下一則：尚未排程' : latestTitleText(entry),
           headerTrailing: PopupMenuButton<String>(
             icon: Icon(Icons.more_horiz, color: tokens.textSecondary),
@@ -325,7 +317,6 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
           ),
           onLearnNow: () async {
             await UserLearningStore().markLearnedTodayAndGlobal(lp.productId);
-            ref.invalidate(weeklyCountProvider(lp.productId));
             // ignore: use_build_context_synchronously
             ScaffoldMessenger.of(context)
                 .showSnackBar(const SnackBar(content: Text('已記錄：今天完成 1 次學習')));
@@ -343,7 +334,6 @@ class _BubbleLibraryPageState extends ConsumerState<BubbleLibraryPage> {
           },
           onTap: () async {
             await UserLearningStore().markLearnedTodayAndGlobal(lp.productId);
-            ref.invalidate(weeklyCountProvider(lp.productId));
             await ref
                 .read(libraryRepoProvider)
                 .touchLastOpened(ref.read(uidProvider), lp.productId);

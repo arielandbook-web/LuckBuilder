@@ -245,7 +245,7 @@ class _PopPainter extends CustomPainter {
 
     // particles
     final particlePaint = Paint()..color = const Color(0x55FFFFFF);
-    final count = 20;
+    const count = 20;
     for (int i = 0; i < count; i++) {
       final ang = (i / count) * pi * 2;
       final dist = ringP * (size.width * 0.32);

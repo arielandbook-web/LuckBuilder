@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../services/learning_progress_service.dart';
-import '../../notifications/notification_inbox_store.dart';
+import '../../notifications/push_exclusion_store.dart';
+import '../../widgets/rich_sections/user_learning_store.dart';
 import 'notifications/notification_service.dart';
 import 'notifications/notification_scheduler.dart';
 import 'notifications/push_orchestrator.dart';
@@ -119,66 +120,83 @@ class _BubbleBootstrapperState extends ConsumerState<BubbleBootstrapper> {
           }
         }
       },
-      onLater: (payload) async {
+      // ✅ 重新學習回調：重置產品進度並重新排程
+      onRestart: (payload) async {
         if (kDebugMode) {
-          debugPrint('📱 onLater called with payload: $payload');
+          debugPrint('🔄 onRestart called with payload: $payload');
         }
         
-        // payload 可能包含 contentId 或 contentItemId，統一處理
-        final topicId = payload['topicId'] as String?;
-        final contentId = payload['contentId'] as String? ??
-            payload['contentItemId'] as String?;
-        final pushOrderRaw = payload['pushOrder'];
-        
-        // JSON decode 後 pushOrder 可能是 num 而非 int，需要轉換
-        int? pushOrder;
-        if (pushOrderRaw is int) {
-          pushOrder = pushOrderRaw;
-        } else if (pushOrderRaw is num) {
-          pushOrder = pushOrderRaw.toInt();
-        }
-
-        if (kDebugMode) {
-          debugPrint('📋 Parsed: topicId=$topicId contentId=$contentId pushOrder=$pushOrder (raw: $pushOrderRaw, type: ${pushOrderRaw.runtimeType})');
-        }
-
-        // ✅ 降級邏輯：即使缺少 topicId 或 pushOrder，也使用 libraryRepo 標記為稍後再學
-        if (contentId != null && contentId.isNotEmpty) {
-          try {
-            await libraryRepo.setSavedItem(uid, contentId, {'reviewLater': true});
-            if (kDebugMode) {
-              debugPrint('✅ setSavedItem reviewLater=true: contentId=$contentId');
-            }
-          } catch (e) {
-            if (kDebugMode) {
-              debugPrint('❌ setSavedItem error: $e');
-            }
+        final productId = payload['productId'] as String?;
+        if (productId == null || productId.isEmpty) {
+          if (kDebugMode) {
+            debugPrint('❌ onRestart: productId is missing');
           }
+          return;
         }
-
-        // 嘗試使用 LearningProgressService（如果資料完整）
-        if (topicId != null && contentId != null && pushOrder != null) {
+        
+        try {
+          // 獲取該商品的所有內容
+          final contentItems = await ref.read(contentByProductProvider(productId).future);
+          final contentItemIds = contentItems.map((e) => e.id).toList();
+          
+          // 獲取產品資訊（用於取得 topicId）
+          final productsMap = await ref.read(productsMapProvider.future);
+          final product = productsMap[productId];
+          final topicId = product?.topicId;
+          
+          // ✅ 1. 取消該產品所有已排程的通知（確保舊通知不會干擾）
+          final ns = NotificationService();
+          await ns.cancelByProductId(productId);
+          
+          // ✅ 2. 清除該產品的排除數據（opened, missed, scheduled）
+          await PushExclusionStore.clearProduct(uid, contentItemIds);
+          
+          // ✅ 3. 清除本地學習歷史
+          final userLearningStore = UserLearningStore();
+          await userLearningStore.clearProductHistory(productId);
+          
+          // ✅ 4. 執行重置（清除學習狀態、contentState、topicProgress，重新啟用推播）
+          await libraryRepo.resetProductProgress(
+            uid: uid,
+            productId: productId,
+            contentItemIds: contentItemIds,
+            topicId: topicId,
+          );
+          
+          // ✅ 5. 刷新 UI 並等待數據更新完成（確保重新排程時讀到最新狀態）
+          ref.invalidate(savedItemsProvider);
+          ref.invalidate(libraryProductsProvider);
+          
+          // 等待 provider 更新完成，確保重新排程時讀到清除後的數據
           try {
-            await progress.snoozeContent(
-              topicId: topicId,
-              contentId: contentId,
-              pushOrder: pushOrder,
-              duration: const Duration(hours: 6),
-              source: 'ios_action',
-            );
-            if (kDebugMode) {
-              debugPrint(
-                  '🌙 snoozeContent: topicId=$topicId contentId=$contentId pushOrder=$pushOrder');
-            }
+            await ref.read(savedItemsProvider.future);
+            await ref.read(libraryProductsProvider.future);
           } catch (e) {
-            // 忽略錯誤，已經用 setSavedItem 標記了
             if (kDebugMode) {
-              debugPrint('⚠️ snoozeContent failed (fallback used): $e');
+              debugPrint('⚠️ 等待 provider 更新失敗: $e');
             }
+            // 繼續執行，push_orchestrator 內部也會等待
+          }
+          
+          // ✅ 6. 重新排程（確保新的推播正常運作，並按新排程建立學習歷史）
+          final scheduler = ref.read(notificationSchedulerProvider);
+          await scheduler.schedule(
+            ref: ref,
+            days: 3,
+            source: 'restart_action',
+            immediate: true,
+          );
+          
+          if (kDebugMode) {
+            debugPrint('✅ onRestart: 已重新開始，推播已重新排程，學習歷史已清除');
+          }
+        } catch (e) {
+          if (kDebugMode) {
+            debugPrint('❌ onRestart error: $e');
           }
         }
       },
-      // ✅ 重排回調：在完成/稍候再學後重排未來 3 天
+      // ✅ 重排回調：在完成後重排未來 3 天
       onReschedule: () async {
         try {
           final scheduler = ref.read(notificationSchedulerProvider);
@@ -206,7 +224,26 @@ class _BubbleBootstrapperState extends ConsumerState<BubbleBootstrapper> {
       await ns.init(
         uid: uid,
         onTap: (data) {
-          // 點擊通知本體：導航到 DetailPage
+          // 點擊通知本體
+          final type = data['type'] as String?;
+          
+          // 完成通知：導航到產品設定頁面
+          if (type == 'completion') {
+            final productId = data['productId'] as String?;
+            if (productId != null && mounted) {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => ProductLibraryPage(
+                    productId: productId,
+                    isWishlistPreview: false,
+                  ),
+                ),
+              );
+            }
+            return;
+          }
+          
+          // 一般推播：導航到 DetailPage
           final contentItemId = data['contentItemId'] as String?;
           if (contentItemId != null && mounted) {
             Navigator.of(context).push(
@@ -292,16 +329,10 @@ class _BubbleBootstrapperState extends ConsumerState<BubbleBootstrapper> {
     // 新的 2 個 action
     if (actionId == NotificationService.actionLearned && cid != null) {
       // ✅ 1) 先掃描過期的通知
-      await NotificationInboxStore.sweepMissed(uid);
+      await PushExclusionStore.sweepExpired(uid);
       
       // ✅ 2) 標記為已讀（opened 優先於 missed）
-      if (pid != null && pid.isNotEmpty) {
-        await NotificationInboxStore.markOpened(
-          uid,
-          productId: pid,
-          contentItemId: cid,
-        );
-      }
+      await PushExclusionStore.markOpened(uid, cid);
       
       // ✅ 3) 使用 LearningProgressService 標記為已學會（統一學習狀態管理）
       int? pushOrder;
@@ -342,52 +373,11 @@ class _BubbleBootstrapperState extends ConsumerState<BubbleBootstrapper> {
       // ✅ 4) 取消該內容的推播
       await ns.cancelByContentItemId(cid);
       
-    } else if (actionId == NotificationService.actionLater && cid != null) {
-      // ✅ 1) 先掃描過期的通知
-      await NotificationInboxStore.sweepMissed(uid);
-      
-      // ✅ 2) 使用 LearningProgressService 稍後再學（統一學習狀態管理）
-      int? pushOrder;
-      if (pushOrderRaw is int) {
-        pushOrder = pushOrderRaw;
-      } else if (pushOrderRaw is num) {
-        pushOrder = pushOrderRaw.toInt();
-      }
-
-      if (topicId != null && contentId != null && pushOrder != null) {
-        try {
-          await progress.snoozeContent(
-            topicId: topicId,
-            contentId: contentId,
-            pushOrder: pushOrder,
-            duration: const Duration(hours: 6),
-            source: 'notification_action',
-          );
-          // ✅ 刷新 UI
-          ref.invalidate(savedItemsProvider);
-          if (kDebugMode) {
-            debugPrint('🌙 LATER: product=$pid content=$cid -> snooze');
-          }
-        } catch (e) {
-          if (kDebugMode) {
-            debugPrint('❌ snoozeContent error: $e');
-          }
-          // 降級：如果 LearningProgressService 失敗，使用舊方法
-          await repo.setSavedItem(uid, cid, {'reviewLater': true});
-          ref.invalidate(savedItemsProvider);
-        }
-      } else {
-        // 如果 payload 缺少必要資訊，使用舊方法
-        await repo.setSavedItem(uid, cid, {'reviewLater': true});
-        ref.invalidate(savedItemsProvider);
-      }
-      
-      // ✅ 3) 取消該內容的推播
-      await ns.cancelByContentItemId(cid);
+      return; // ✅ actionLearned 處理完成，只標記完成，不導航
     }
 
     // 點通知本體：跳轉（延遲執行，確保 Flutter 引擎已準備好）
-    // 注意：如果是點擊按鈕（actionId != null），且按鈕是背景操作，則不應執行導航
+    // 注意：如果是點擊按鈕（actionId != null），且按鈕不是 actionLearned，則不應執行導航
     if (!mounted || actionId != null) return;
     
     // 只有點擊通知本體（actionId == null）才進行導航

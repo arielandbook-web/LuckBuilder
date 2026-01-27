@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../notifications/notification_inbox_store.dart';
+import '../../notifications/push_exclusion_store.dart';
 import 'notification_service.dart';
 import 'notification_scheduler.dart';
 import '../providers/providers.dart';
@@ -79,10 +79,10 @@ class BubbleActionHandler {
 
       // ✅ 步驟 1：掃描過期通知（確保狀態一致）
       try {
-        await NotificationInboxStore.sweepMissed(uid);
-        completedSteps.add('sweepMissed');
+        await PushExclusionStore.sweepExpired(uid);
+        completedSteps.add('sweepExpired');
       } catch (e) {
-        return BubbleActionResult.failure('sweepMissed', e.toString(), completedSteps);
+        return BubbleActionResult.failure('sweepExpired', e.toString(), completedSteps);
       }
 
       // ✅ 步驟 2：根據動作類型執行相應操作
@@ -148,11 +148,7 @@ class BubbleActionHandler {
   }) async {
     try {
       // 標記為已讀
-      await NotificationInboxStore.markOpened(
-        uid,
-        productId: productId,
-        contentItemId: contentItemId,
-      );
+      await PushExclusionStore.markOpened(uid, contentItemId);
       completedSteps.add('markOpened');
 
       return BubbleActionResult.success(completedSteps);
@@ -179,11 +175,7 @@ class BubbleActionHandler {
 
     try {
       // ✅ 1) 標記為已讀
-      await NotificationInboxStore.markOpened(
-        uid,
-        productId: productId,
-        contentItemId: contentItemId,
-      );
+      await PushExclusionStore.markOpened(uid, contentItemId);
       completedSteps.add('markOpened');
 
       // ✅ 2) 更新 saved_items（讓 UI 立即看到變化）
@@ -336,7 +328,7 @@ class BubbleActionHandler {
 
     try {
       // ✅ 檢查是否已開啟（opened 優先於 dismissed）
-      final isOpened = await NotificationInboxStore.isOpenedGlobal(uid, contentItemId);
+      final isOpened = await PushExclusionStore.isOpened(uid, contentItemId);
       if (isOpened) {
         if (kDebugMode) {
           debugPrint('ℹ️ 通知已開啟，不標記為 dismissed: $contentItemId');
@@ -346,11 +338,7 @@ class BubbleActionHandler {
       }
 
       // ✅ 標記為錯過
-      await NotificationInboxStore.markMissedByContentItemId(
-        uid,
-        productId: productId,
-        contentItemId: contentItemId,
-      );
+      await PushExclusionStore.markMissed(uid, contentItemId);
       completedSteps.add('markMissed');
 
       // ✅ 重新排程（避免下次又排到同一則）

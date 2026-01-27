@@ -4,12 +4,11 @@ import '../../../theme/app_tokens.dart';
 
 class LibraryRichCard extends StatelessWidget {
   final String title;
-  final String subtitle; // 例如 topicId · level
   final String? coverImageUrl;
 
-  // 「三個資訊」先用 placeholder，之後再接推播排程 / 本週完成度
+  // 三個資訊：總內容數 / 推播排程 / 下一則內容
+  final int? totalItems; // 共 XX 則
   final String nextPushText; // e.g. 每週一三五 08:30 / 下一則 10:30
-  final String weeklyProgress; // e.g. 本週完成度 3/7
   final String latestTitle; // e.g. 最近：黑洞是什麼？
 
   // 右上角操作（⋯ 選單）
@@ -23,10 +22,9 @@ class LibraryRichCard extends StatelessWidget {
   const LibraryRichCard({
     super.key,
     required this.title,
-    required this.subtitle,
     this.coverImageUrl,
+    this.totalItems,
     required this.nextPushText,
-    required this.weeklyProgress,
     required this.latestTitle,
     this.headerTrailing,
     this.onLearnNow,
@@ -74,14 +72,29 @@ class LibraryRichCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
-                      child: Text(
-                        title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            color: tokens.textPrimary),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: tokens.textPrimary),
+                          ),
+                          if (totalItems != null) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              '共 $totalItems 則',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: tokens.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                     if (headerTrailing != null) ...[
@@ -90,15 +103,10 @@ class LibraryRichCard extends StatelessWidget {
                     ],
                   ],
                 ),
-                const SizedBox(height: 4),
-                Text(subtitle, style: TextStyle(color: tokens.textSecondary)),
                 const SizedBox(height: 10),
 
-                // 三個資訊（密度但不亂：一行一個）
+                // 兩個資訊（推播排程 / 下一則內容）
                 _InfoRow(icon: Icons.schedule, text: nextPushText),
-                const SizedBox(height: 6),
-                _InfoRow(
-                    icon: Icons.check_circle_outline, text: weeklyProgress),
                 const SizedBox(height: 6),
                 _InfoRow(icon: Icons.notes, text: latestTitle),
 
