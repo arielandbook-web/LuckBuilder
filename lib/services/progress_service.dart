@@ -209,7 +209,7 @@ class ProgressService {
 
       // 清理已同步超過 7 天的記錄
       final now = DateTime.now().millisecondsSinceEpoch;
-      final sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+      const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
       final cleaned = newQueue
           .where((e) => !e.synced || (now - e.atMs) < sevenDaysMs)
           .toList();

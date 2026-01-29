@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../bubble_library/providers/providers.dart';
+import '../../bubble_library/models/user_library.dart';
 import '../bubble_library/notifications/push_orchestrator.dart';
-import '../bubble_library/notifications/push_scheduler.dart';
+import '../bubble_library/notifications/scheduled_push_cache.dart';
 import '../notifications/skip_next_store.dart';
 import '../notifications/push_timeline_provider.dart';
 import '../bubble_library/ui/product_library_page.dart';
@@ -40,7 +41,9 @@ class PushTimelineList extends ConsumerWidget {
 
     final metaMode = ref.watch(timelineMetaModeProvider);
 
-    final timelineAsync = ref.watch(upcomingTimelineProvider);
+    // ✅ 方案 A：改用本機排程快取（ScheduledPushCache）
+    // 讓「未來 3 天時間表」與泡泡庫卡片、實際 OS 通知保持一致
+    final timelineAsync = ref.watch(scheduledCacheProvider);
     final productsAsync = ref.watch(productsMapProvider);
     final libAsync = ref.watch(libraryProductsProvider);
     final savedAsync = ref.watch(savedItemsProvider);
@@ -48,7 +51,7 @@ class PushTimelineList extends ConsumerWidget {
 
     Widget topBar() {
       if (!showTopBar) return const SizedBox.shrink();
-      return Padding(
+            return Padding(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
         child: Row(
           children: [
@@ -88,8 +91,8 @@ class PushTimelineList extends ConsumerWidget {
               tooltip: '重排未來 3 天',
               icon: const Icon(Icons.refresh),
               onPressed: () async {
+                // 透過單一入口重排，內部會自動刷新 scheduledCacheProvider
                 await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
-                ref.invalidate(upcomingTimelineProvider);
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('已重排未來 3 天推播')),
@@ -156,8 +159,8 @@ class PushTimelineList extends ConsumerWidget {
                   tooltip: '重排',
                   icon: const Icon(Icons.refresh),
                   onPressed: () async {
+                    // 透過單一入口重排，內部會自動刷新 scheduledCacheProvider
                     await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
-                    ref.invalidate(upcomingTimelineProvider);
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('已重排未來 3 天推播')),
@@ -194,8 +197,8 @@ class PushTimelineList extends ConsumerWidget {
                 return globalPushAsync.when(
                   data: (globalPush) {
                     return timelineAsync.when(
-                      data: (items) {
-                        if (items.isEmpty) {
+                      data: (entries) {
+                        if (entries.isEmpty) {
                           // 檢查為什麼沒有排程
                           final pushingProducts = lib.where((e) => !e.isHidden && e.pushEnabled).toList();
                           String emptyMessage;
@@ -246,32 +249,57 @@ class PushTimelineList extends ConsumerWidget {
 
                     // build rows (header + items)
                     final rows = <TLRow>[];
-                    final grouped = <String, List<PushTask>>{};
+                    final grouped = <String, List<ScheduledPushEntry>>{};
                     
-                    // 如果有限制，先限制 items
+                    // ✅ 去重：根據 notificationId 或 (contentItemId + when) 組合去重
+                    final seen = <String>{};
+                    final uniqueEntries = <ScheduledPushEntry>[];
+                    for (final e in entries) {
+                      // 優先使用 notificationId 去重（如果存在）
+                      String key;
+                      if (e.notificationId != null) {
+                        key = 'nid:${e.notificationId}';
+                      } else {
+                        // 否則使用 contentItemId + when 組合
+                        final contentItemId = e.payload['contentItemId']?.toString() ?? '';
+                        key = 'cid:${contentItemId}_${e.when.millisecondsSinceEpoch}';
+                      }
+                      
+                      if (!seen.contains(key)) {
+                        seen.add(key);
+                        uniqueEntries.add(e);
+                      }
+                    }
+                    
+                    // 如果有限制，先限制 entries
                     final itemsToProcess = limit != null && limit! > 0
-                        ? items.take(limit!).toList()
-                        : items;
+                        ? uniqueEntries.take(limit!).toList()
+                        : uniqueEntries;
                     
-                    for (final t in itemsToProcess) {
-                      final dk = tlDayKey(t.when);
-                      grouped.putIfAbsent(dk, () => []).add(t);
+                    for (final e in itemsToProcess) {
+                      final dk = tlDayKey(e.when);
+                      grouped.putIfAbsent(dk, () => []).add(e);
                     }
 
                     final dayKeys = grouped.keys.toList()..sort();
                     for (final dk in dayKeys) {
                       rows.add(TLRow.header(dk));
 
-                      final list = grouped[dk]!..sort((a, b) {
+                      final list = (grouped[dk] ?? <ScheduledPushEntry>[])..sort((a, b) {
                         return a.when.compareTo(b.when);
                       });
 
-                      // 計算同日同商品的第N則
+                      // 計算同日同商品的第 N 則（同一天、同一商品）
                       final perProdCounter = <String, int>{};
-                      for (final t in list) {
-                        final n = (perProdCounter[t.productId] ?? 0) + 1;
-                        perProdCounter[t.productId] = n;
-                        rows.add(TLRow.item(t, seqInDayForProduct: n));
+                      for (final e in list) {
+                        final productId =
+                            e.payload['productId']?.toString() ?? '';
+                        if (productId.isEmpty) {
+                          continue;
+                        }
+                        final n = (perProdCounter[productId] ?? 0) + 1;
+                        perProdCounter[productId] = n;
+                        rows.add(TLRow.item(e, seqInDayForProduct: n));
                       }
                     }
 
@@ -314,15 +342,27 @@ class PushTimelineList extends ConsumerWidget {
                               if (r.item == null) {
                                 return const SizedBox.shrink();
                               }
-                              final task = r.item as PushTask;
-                              final when = task.when;
-                              final productId = task.productId;
-                              final contentItemId = task.item.id;
-                              final preview = task.item.content;
-                              final day = task.item.pushOrder;
+                              final entry = r.item as ScheduledPushEntry;
+                              final when = entry.when;
+                              final payload = entry.payload;
+                              final productId =
+                                  payload['productId']?.toString() ?? '';
+                              final contentItemId =
+                                  payload['contentItemId']?.toString() ?? '';
+
+                              // preview：優先使用 body 第二行，否則用第一行
+                              final lines = entry.body.split('\n');
+                              final preview = lines.length >= 2
+                                  ? lines[1]
+                                  : lines.first;
+
+                              // Day N：從 payload.pushOrder 取得（若有）
+                              final day = (payload['pushOrder'] as num?)
+                                      ?.toInt() ??
+                                  0;
 
                               final productTitle = productsMap[productId]?.title ?? productId;
-                              final lp = libMap[productId];
+                              final lp = libMap[productId] as UserLibraryProduct?;
 
                               String metaText() {
                                 switch (metaMode) {
@@ -407,9 +447,9 @@ class PushTimelineList extends ConsumerWidget {
                                             ),
                                             onPressed: () async {
                                               await SkipNextStore.add(uid, contentItemId);
+                                              // 透過單一入口重排，內部會自動刷新 scheduledCacheProvider
                                               await PushOrchestrator.rescheduleNextDays(
                                                   ref: ref, days: 3);
-                                              ref.invalidate(upcomingTimelineProvider);
                                               if (context.mounted) {
                                                 ScaffoldMessenger.of(context).showSnackBar(
                                                   const SnackBar(content: Text('已跳過下一則並重排')),

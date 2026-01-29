@@ -36,7 +36,7 @@ class TimeRange {
 class PushConfig {
   final int freqPerDay; // 1..5
   final PushTimeMode timeMode;
-  final List<String> presetSlots; // morning/noon/evening/night
+  final List<String> presetSlots; // 7-9, 9-11, 11-13, 13-15, 15-17, 17-19, 19-21, 21-23
   final List<TimeOfDay> customTimes; // 1..5
   final Set<int> daysOfWeek; // 1..7
   final int minIntervalMinutes; // e.g. 120
@@ -55,7 +55,7 @@ class PushConfig {
   static PushConfig defaults() => const PushConfig(
         freqPerDay: 1,
         timeMode: PushTimeMode.preset,
-        presetSlots: ['night'], // 預設睡前（最不打擾）
+        presetSlots: ['21-23'], // 預設睡前（最不打擾）
         customTimes: [],
         daysOfWeek: {1, 2, 3, 4, 5, 6, 7},
         minIntervalMinutes: 120,
@@ -107,7 +107,7 @@ class PushConfig {
     return PushConfig(
       freqPerDay: ((m['freqPerDay'] ?? 1) as num).toInt().clamp(1, 5),
       timeMode: timeMode,
-      presetSlots: (m['presetSlots'] as List<dynamic>? ?? ['night'])
+      presetSlots: (m['presetSlots'] as List<dynamic>? ?? ['21-23'])
           .map((e) => e.toString())
           .toList(),
       customTimes: customTimes.take(5).toList(),

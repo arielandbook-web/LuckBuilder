@@ -69,8 +69,42 @@ final previewItemsProvider =
 final searchQueryProvider = StateProvider<String>((ref) => '');
 
 final searchResultsProvider = FutureProvider<List<Product>>((ref) async {
-  final q = ref.watch(searchQueryProvider);
-  return ref.watch(v2RepoProvider).searchProductsPrefix(q);
+  final q = ref.watch(searchQueryProvider).trim();
+  if (q.isEmpty) return [];
+  
+  final repo = ref.watch(v2RepoProvider);
+  
+  // 1. 搜索产品标题
+  final titleResults = await repo.searchProductsPrefix(q);
+  
+  // 2. 搜索预览内容文字
+  final contentMatchedIds = await repo.searchProductsByContent(q);
+  
+  // 3. 获取内容匹配的产品对象
+  final contentResults = contentMatchedIds.isEmpty
+      ? <Product>[]
+      : await repo.fetchProductsByIdsOrdered(contentMatchedIds);
+  
+  // 4. 合并结果并去重（基于产品ID）
+  // 使用 Set 来跟踪已添加的产品ID，实现去重
+  final seenIds = <String>{};
+  final mergedResults = <Product>[];
+  
+  // 优先添加标题匹配的结果
+  for (final product in titleResults) {
+    if (seenIds.add(product.id)) {
+      mergedResults.add(product);
+    }
+  }
+  
+  // 添加内容匹配但不在标题结果中的产品
+  for (final product in contentResults) {
+    if (seenIds.add(product.id)) {
+      mergedResults.add(product);
+    }
+  }
+  
+  return mergedResults;
 });
 
 enum SearchOwnedFilter { all, purchased, notPurchased }

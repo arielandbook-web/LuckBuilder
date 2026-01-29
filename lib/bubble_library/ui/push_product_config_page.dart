@@ -140,6 +140,10 @@ class PushProductConfigPage extends ConsumerWidget {
                       const SizedBox(height: 10),
                       DropdownButton<int>(
                         value: cfg.freqPerDay,
+                        // ✅ 修復深色主題下拉選單透明背景重疊問題
+                        dropdownColor: Theme.of(context).brightness == Brightness.dark
+                            ? const Color(0xFF14182E)
+                            : null,
                         items: const [1, 2, 3, 4, 5]
                             .map((e) => DropdownMenuItem(
                                 value: e, child: Text('$e 次/天')))
@@ -259,6 +263,10 @@ class PushProductConfigPage extends ConsumerWidget {
                           style: TextStyle(fontWeight: FontWeight.w900)),
                       DropdownButton<int>(
                         value: cfg.minIntervalMinutes,
+                        // ✅ 修復深色主題下拉選單透明背景重疊問題
+                        dropdownColor: Theme.of(context).brightness == Brightness.dark
+                            ? const Color(0xFF14182E)
+                            : null,
                         items: const [60, 90, 120, 180]
                             .map((e) =>
                                 DropdownMenuItem(value: e, child: Text('$e')))
@@ -295,33 +303,40 @@ class PushProductConfigPage extends ConsumerWidget {
 
   Widget _presetSlots(
       WidgetRef ref, String uid, String productId, PushConfig cfg) {
-    const slots = ['morning', 'noon', 'evening', 'night'];
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: slots.map((s) {
-        final selected = cfg.presetSlots.contains(s);
-        return FilterChip(
-          selected: selected,
-          label: Text(s),
-          onSelected: (v) async {
-            final newSlots = List<String>.from(cfg.presetSlots);
-            if (v) {
-              newSlots.add(s);
-            } else {
-              newSlots.remove(s);
-            }
-            final fixed = newSlots.isEmpty ? ['night'] : newSlots;
-            final newCfg = cfg.copyWith(presetSlots: fixed);
-            await ref
-                .read(libraryRepoProvider)
-                .setPushConfig(uid, productId, newCfg.toMap());
-            ref.invalidate(libraryProductsProvider);
-            await ref.read(libraryProductsProvider.future);
-            await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
-          },
-        );
-      }).toList(),
+    // ✅ 新的8个固定2小时时间段
+    const slots = ['7-9', '9-11', '11-13', '13-15', '15-17', '17-19', '19-21', '21-23'];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: slots.map((s) {
+            final selected = cfg.presetSlots.contains(s);
+            return FilterChip(
+              selected: selected,
+              label: Text('$s 點'),
+              onSelected: (v) async {
+                final newSlots = List<String>.from(cfg.presetSlots);
+                if (v) {
+                  newSlots.add(s);
+                } else {
+                  newSlots.remove(s);
+                }
+                // ✅ 默认时间段改为 21-23
+                final fixed = newSlots.isEmpty ? ['21-23'] : newSlots;
+                final newCfg = cfg.copyWith(presetSlots: fixed);
+                await ref
+                    .read(libraryRepoProvider)
+                    .setPushConfig(uid, productId, newCfg.toMap());
+                ref.invalidate(libraryProductsProvider);
+                await ref.read(libraryProductsProvider.future);
+                await PushOrchestrator.rescheduleNextDays(ref: ref, days: 3);
+              },
+            );
+          }).toList(),
+        ),
+      ],
     );
   }
 

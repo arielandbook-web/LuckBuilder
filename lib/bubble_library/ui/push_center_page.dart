@@ -293,6 +293,10 @@ class PushCenterPage extends ConsumerWidget {
             subtitle: Text('${g.dailyTotalCap} 則/天'),
             trailing: DropdownButton<int>(
               value: g.dailyTotalCap,
+              // ✅ 修復深色主題下拉選單透明背景重疊問題
+              dropdownColor: Theme.of(context).brightness == Brightness.dark
+                  ? const Color(0xFF14182E)
+                  : null,
               items: (() {
                 const presets = <int>[6, 8, 12, 20];
                 final values = {...presets, g.dailyTotalCap}.toList()..sort();

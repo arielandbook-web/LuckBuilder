@@ -336,7 +336,10 @@ class _SearchPageState extends ConsumerState<SearchPage> {
         return Container(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
           decoration: BoxDecoration(
-            color: tokens.cardBg,
+            // ✅ 修復深色主題背景重疊問題：使用不透明背景
+            color: Theme.of(context).brightness == Brightness.dark
+                ? const Color(0xFF14182E) // 深色主題使用不透明背景
+                : tokens.cardBg,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
             border: Border.all(color: tokens.cardBorder),
           ),
@@ -738,6 +741,10 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                               child: DropdownButtonHideUnderline(
                                 child: DropdownButton<SearchSort>(
                                   value: sort,
+                                  // ✅ 修復深色主題下拉選單透明背景重疊問題
+                                  dropdownColor: Theme.of(context).brightness == Brightness.dark
+                                      ? const Color(0xFF14182E)
+                                      : null,
                                   items: const [
                                     DropdownMenuItem(
                                       value: SearchSort.relevant,

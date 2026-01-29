@@ -324,21 +324,34 @@ class V2Repository {
   }
 
   // 根據產品 ID 列表獲取產品，保持順序
+  // ✅ 處理 whereIn 的 10 個元素限制，分批查詢
   Future<List<Product>> fetchProductsByIdsOrdered(List<String> ids) async {
     try {
       if (ids.isEmpty) return [];
 
-      final snapshot = await _firestore
-          .collection(Col.products)
-          .where(FieldPath.documentId, whereIn: ids)
-          .where(F.published, isEqualTo: true)
-          .get();
+      final productsMap = <String, Product>{};
+      const batchSize = 10; // Firestore whereIn 限制為 10 個元素
+      
+      // 分批查詢以處理 whereIn 限制
+      for (var i = 0; i < ids.length; i += batchSize) {
+        final batch = ids.skip(i).take(batchSize).toList();
+        try {
+          final snapshot = await _firestore
+              .collection(Col.products)
+              .where(FieldPath.documentId, whereIn: batch)
+              .where(F.published, isEqualTo: true)
+              .get();
 
-      final productsMap = {
-        for (var doc in snapshot.docs)
-          doc.id: Product.fromDoc(doc.id, doc.data())
-      };
+          for (var doc in snapshot.docs) {
+            productsMap[doc.id] = Product.fromDoc(doc.id, doc.data());
+          }
+        } catch (e) {
+          debugPrint('Error fetching products batch: $e');
+          // 繼續處理下一批
+        }
+      }
 
+      // 按照原始順序返回產品
       return ids.map((id) => productsMap[id]).whereType<Product>().toList();
     } catch (e) {
       debugPrint('Error fetching products by ids ordered: $e');
@@ -425,6 +438,65 @@ class V2Repository {
           .toList();
     } catch (e) {
       debugPrint('Error searching products: $e');
+      return [];
+    }
+  }
+
+  // 根據內容文字搜尋產品（只搜尋預覽內容）- 客戶端過濾
+  // ✅ 性能優化：一次性獲取所有預覽內容項，避免多次查詢
+  Future<List<String>> searchProductsByContent(String query) async {
+    try {
+      if (query.isEmpty) return [];
+
+      final queryLower = query.toLowerCase();
+      final matchedProductIds = <String>{};
+
+      // ✅ 一次性獲取所有預覽內容項（性能優化：減少 Firestore 查詢次數）
+      final contentSnapshot = await _firestore
+          .collection(Col.contentItems)
+          .where(F.isPreview, isEqualTo: true)
+          .get();
+
+      // 在客戶端過濾包含搜索關鍵詞的內容項
+      for (final contentDoc in contentSnapshot.docs) {
+        final contentData = contentDoc.data();
+        final content = (contentData['content'] ?? '').toString().toLowerCase();
+        
+        if (content.contains(queryLower)) {
+          final productId = (contentData[F.productId] ?? '').toString();
+          if (productId.isNotEmpty) {
+            matchedProductIds.add(productId);
+          }
+        }
+      }
+
+      // ✅ 驗證匹配的產品是否已發布（確保權限控制）
+      if (matchedProductIds.isEmpty) return [];
+      
+      // ✅ 處理 whereIn 的 10 個元素限制，分批查詢
+      final matchedIdsList = matchedProductIds.toList();
+      final publishedProductIds = <String>[];
+      const batchSize = 10; // Firestore whereIn 限制為 10 個元素
+      
+      for (var i = 0; i < matchedIdsList.length; i += batchSize) {
+        final batch = matchedIdsList.skip(i).take(batchSize).toList();
+        try {
+          final productsSnapshot = await _firestore
+              .collection(Col.products)
+              .where(FieldPath.documentId, whereIn: batch)
+              .where(F.published, isEqualTo: true)
+              .get();
+          
+          publishedProductIds.addAll(productsSnapshot.docs.map((doc) => doc.id));
+        } catch (e) {
+          debugPrint('Error fetching products batch: $e');
+          // 繼續處理下一批
+        }
+      }
+
+      return publishedProductIds;
+    } catch (e) {
+      debugPrint('Error searching products by content: $e');
       return [];
     }
   }

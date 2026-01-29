@@ -96,6 +96,8 @@ class AppThemes {
       ).copyWith(
         primary: primary,
         surface: tokens.cardBg,
+        // ✅ 修復深色主題下拉選單：確保 surfaceContainerHighest 使用不透明背景
+        surfaceContainerHighest: const Color(0xFF14182E),
       ),
       textTheme: const TextTheme(
         titleLarge: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
@@ -125,6 +127,35 @@ class AppThemes {
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
         type: BottomNavigationBarType.fixed,
         showUnselectedLabels: true,
+      ),
+      // ✅ 修復深色主題下拉選單透明背景重疊問題
+      // DropdownButton 使用 Menu widget，需要配置 menuTheme
+      menuTheme: MenuThemeData(
+        style: MenuStyle(
+          backgroundColor: WidgetStateProperty.all(
+            const Color(0xFF14182E), // 使用不透明的深色背景，避免透明重疊
+          ),
+          elevation: WidgetStateProperty.all(8),
+          shape: WidgetStateProperty.all(
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+      ),
+      // DropdownMenu widget 的主題配置
+      dropdownMenuTheme: DropdownMenuThemeData(
+        menuStyle: MenuStyle(
+          backgroundColor: WidgetStateProperty.all(
+            const Color(0xFF14182E), // 使用不透明的深色背景，避免透明重疊
+          ),
+          elevation: WidgetStateProperty.all(8),
+          shape: WidgetStateProperty.all(
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
       ),
     );
 
@@ -233,6 +264,35 @@ class AppThemes {
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
         type: BottomNavigationBarType.fixed,
         showUnselectedLabels: true,
+      ),
+      // ✅ 淺色主題下拉選單主題配置
+      // DropdownButton 使用 Menu widget，需要配置 menuTheme
+      menuTheme: MenuThemeData(
+        style: MenuStyle(
+          backgroundColor: WidgetStateProperty.all(
+            Colors.white, // 淺色主題使用白色背景
+          ),
+          elevation: WidgetStateProperty.all(8),
+          shape: WidgetStateProperty.all(
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+      ),
+      // DropdownMenu widget 的主題配置
+      dropdownMenuTheme: DropdownMenuThemeData(
+        menuStyle: MenuStyle(
+          backgroundColor: WidgetStateProperty.all(
+            Colors.white, // 淺色主題使用白色背景
+          ),
+          elevation: WidgetStateProperty.all(8),
+          shape: WidgetStateProperty.all(
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
       ),
     );
 

@@ -150,16 +150,42 @@ class PushScheduleConflictChecker {
     if (config.timeMode == PushTimeMode.custom && config.customTimes.isNotEmpty) {
       times = List<TimeOfDay>.from(config.customTimes);
     } else {
-      final presetSlotTimes = {
-        'morning': TimeOfDay(hour: 9, minute: 10),
-        'noon': TimeOfDay(hour: 12, minute: 30),
-        'evening': TimeOfDay(hour: 18, minute: 40),
-        'night': TimeOfDay(hour: 21, minute: 40),
+      // ✅ 使用新的时间范围定义，使用中点时间作为代表性时间点（用于冲突检查）
+      final presetSlotRanges = {
+        '7-9': const TimeRange(TimeOfDay(hour: 7, minute: 0), TimeOfDay(hour: 9, minute: 0)),
+        '9-11': const TimeRange(TimeOfDay(hour: 9, minute: 0), TimeOfDay(hour: 11, minute: 0)),
+        '11-13': const TimeRange(TimeOfDay(hour: 11, minute: 0), TimeOfDay(hour: 13, minute: 0)),
+        '13-15': const TimeRange(TimeOfDay(hour: 13, minute: 0), TimeOfDay(hour: 15, minute: 0)),
+        '15-17': const TimeRange(TimeOfDay(hour: 15, minute: 0), TimeOfDay(hour: 17, minute: 0)),
+        '17-19': const TimeRange(TimeOfDay(hour: 17, minute: 0), TimeOfDay(hour: 19, minute: 0)),
+        '19-21': const TimeRange(TimeOfDay(hour: 19, minute: 0), TimeOfDay(hour: 21, minute: 0)),
+        '21-23': const TimeRange(TimeOfDay(hour: 21, minute: 0), TimeOfDay(hour: 23, minute: 0)),
       };
-      final slots = config.presetSlots.isEmpty ? ['night'] : config.presetSlots;
+      
+      // ✅ 计算时间范围的中点时间作为代表性时间点
+      TimeOfDay getMidpoint(TimeRange range) {
+        final startMin = _todToMin(range.start);
+        final endMin = _todToMin(range.end);
+        int rangeMinutes;
+        if (startMin < endMin) {
+          rangeMinutes = endMin - startMin;
+        } else {
+          rangeMinutes = (24 * 60 - startMin) + endMin;
+        }
+        final midpointMin = (startMin + rangeMinutes ~/ 2) % (24 * 60);
+        return TimeOfDay(hour: midpointMin ~/ 60, minute: midpointMin % 60);
+      }
+      
+      final slots = config.presetSlots.isEmpty ? ['21-23'] : config.presetSlots;
       times = slots
-          .map((s) => presetSlotTimes[s] ?? presetSlotTimes['night']!)
+          .where((s) => presetSlotRanges.containsKey(s)) // ✅ 只处理新的时间范围格式
+          .map((s) => getMidpoint(presetSlotRanges[s]!))
           .toList();
+      
+      // ✅ 如果没有有效的时间段，使用默认时间段 21-23
+      if (times.isEmpty) {
+        times = [getMidpoint(presetSlotRanges['21-23']!)];
+      }
     }
 
     // 應用頻率擴展（簡化版，不考慮 minInterval）

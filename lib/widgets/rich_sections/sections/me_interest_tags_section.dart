@@ -254,7 +254,7 @@ class _MeInterestTagsSectionState extends ConsumerState<MeInterestTagsSection> {
     return showModalBottomSheet<List<String>>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
+      backgroundColor: Colors.transparent, // 使用透明背景，让 Container 控制颜色
       builder: (_) {
         return StatefulBuilder(
           builder: (context, setModal) {
@@ -277,7 +277,10 @@ class _MeInterestTagsSectionState extends ConsumerState<MeInterestTagsSection> {
               margin: const EdgeInsets.all(12),
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: context.tokens.cardBg,
+                // ✅ 修復深色主題背景重疊問題：使用不透明背景
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? const Color(0xFF14182E) // 深色主題使用不透明背景
+                    : context.tokens.cardBg,
                 borderRadius: BorderRadius.circular(22),
                 border: Border.all(color: context.tokens.cardBorder),
               ),
@@ -313,7 +316,10 @@ class _MeInterestTagsSectionState extends ConsumerState<MeInterestTagsSection> {
                               hintText: '例如：睡前學習、通勤碎片…',
                               hintStyle: TextStyle(color: tokens.textSecondary),
                               filled: true,
-                              fillColor: tokens.cardBg.withValues(alpha: 0.5),
+                              // ✅ 修復深色主題輸入框透明背景重疊問題：使用不透明背景
+                              fillColor: Theme.of(context).brightness == Brightness.dark
+                                  ? const Color.fromRGBO(255, 255, 255, 0.10) // 深色主題使用不透明背景
+                                  : tokens.cardBg.withValues(alpha: 0.5),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(14),
                                 borderSide: BorderSide(

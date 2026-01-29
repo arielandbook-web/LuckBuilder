@@ -233,99 +233,87 @@ class _HomeTodayTaskSectionState extends ConsumerState<HomeTodayTaskSection> {
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
-<<<<<<< HEAD
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 6),
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(999),
-                                  color: done
-                                      ? tokens.primary.withValues(alpha: 0.15)
-                                      : tokens.cardBorder.withValues(alpha: 0.2),
-                                  border: Border.all(
-                                      color: tokens.cardBorder.withValues(alpha: 0.5)),
                             ),
                         ],
                       ),
-                          const SizedBox(height: 8),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(999),
-                            child: LinearProgressIndicator(
-                              value: progress,
-                              minHeight: 10,
-                              backgroundColor: tokens.cardBorder.withValues(alpha: 0.3),
-                              valueColor: AlwaysStoppedAnimation<Color>(tokens.primary),
-                            ),
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: LinearProgressIndicator(
+                          value: progress,
+                          minHeight: 10,
+                          backgroundColor: tokens.cardBorder.withValues(alpha: 0.3),
+                          valueColor: AlwaysStoppedAnimation<Color>(tokens.primary),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // 下一則 + 倒數
+                      Text(
+                        nextText,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: tokens.textSecondary),
+                      ),
+                      if (countdownText.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          countdownText,
+                          style: TextStyle(
+                            color: tokens.textPrimary,
+                            fontWeight: FontWeight.w800,
                           ),
-                          const SizedBox(height: 12),
+                        ),
+                      ],
 
-                          // 下一則 + 倒數
-                          Text(
-                            nextText,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: tokens.textSecondary),
-                          ),
-                          if (countdownText.isNotEmpty) ...[
-                            const SizedBox(height: 6),
-                            Text(
-                              countdownText,
-                              style: TextStyle(
-                                color: tokens.textPrimary,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ],
+                      const SizedBox(height: 12),
 
-                              const SizedBox(height: 12),
->>>>>>> origin/feature/embed-rich-sections
+                      // 立即學 1 則按鈕靠右對齊
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: ElevatedButton(
+                          onPressed: nextEntry == null
+                              ? null
+                              : () async {
+                                  // 立即學 1 則：直接進該 Topic
+                                  final pid = nextEntry
+                                          .payload['productId']
+                                          ?.toString() ??
+                                      '';
+                                  final cid = nextEntry
+                                          .payload['contentItemId']
+                                          ?.toString() ??
+                                      '';
+                                  if (pid.isEmpty) return;
 
-                              // 立即學 1 則按鈕靠右對齊
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: ElevatedButton(
-                                  onPressed: nextEntry == null
-                                      ? null
-                                      : () async {
-                                          // 立即學 1 則：直接進該 Topic
-                                          final pid = nextEntry
-                                                  .payload['productId']
-                                                  ?.toString() ??
-                                              '';
-                                          final cid = nextEntry
-                                                  .payload['contentItemId']
-                                                  ?.toString() ??
-                                              '';
-                                          if (pid.isEmpty) return;
+                                  // 記錄今日完成（全域）
+                                  await UserLearningStore()
+                                      .markGlobalLearnedToday();
 
-                                          // 記錄今日完成（全域）
-                                          await UserLearningStore()
-                                              .markGlobalLearnedToday();
+                                  // 標記推播為已開啟
+                                  if (pid.isNotEmpty && cid.isNotEmpty) {
+                                    final uid = ref.read(uidProvider);
+                                    await PushExclusionStore.markOpened(uid, cid);
+                                  }
 
-                                          // 標記推播為已開啟
-                                          if (pid.isNotEmpty && cid.isNotEmpty) {
-                                            final uid = ref.read(uidProvider);
-                                            await PushExclusionStore.markOpened(uid, cid);
-                                          }
+                                  // ✅ 刷新今日推播統計
+                                  ref.invalidate(_todayPushStatsProvider);
 
-                                          // ✅ 刷新今日推播統計
-                                          ref.invalidate(_todayPushStatsProvider);
-
-                                          // 進頁
-                                          // ignore: use_build_context_synchronously
-                                          Navigator.of(context)
-                                              .push(MaterialPageRoute(
-                                            builder: (_) => ProductLibraryPage(
-                                              productId: pid,
-                                              isWishlistPreview: false,
-                                              initialContentItemId:
-                                                  cid.isNotEmpty ? cid : null,
-                                            ),
-                                          ));
-                                        },
-                                  child: const Text('立即學 1 則'),
-                                ),
-                              ),
+                                  // 進頁
+                                  // ignore: use_build_context_synchronously
+                                  Navigator.of(context)
+                                      .push(MaterialPageRoute(
+                                    builder: (_) => ProductLibraryPage(
+                                      productId: pid,
+                                      isWishlistPreview: false,
+                                      initialContentItemId:
+                                          cid.isNotEmpty ? cid : null,
+                                    ),
+                                  ));
+                                },
+                          child: const Text('立即學 1 則'),
+                        ),
+                      ),
                     ],
                   );
                 },

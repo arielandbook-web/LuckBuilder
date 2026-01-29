@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/timezone.dart' as tz;
@@ -651,12 +650,55 @@ class NotificationService {
       debugPrint('🎉 scheduleCompletionBanner: $productTitle (2 分鐘後顯示)');
     }
 
+    // ✅ 硬編碼橫幅最短間隔：3 分鐘
+    const bannerMinIntervalMinutes = 3;
+
     // 計算 2 分鐘後的時間
     final when = lastItemScheduledTime.add(const Duration(minutes: 2));
     
     // 確保時間在未來（如果最後一則的時間已經過去，則使用當前時間 + 2 分鐘）
     final now = DateTime.now();
-    final scheduledTime = when.isAfter(now) ? when : now.add(const Duration(minutes: 2));
+    var scheduledTime = when.isAfter(now) ? when : now.add(const Duration(minutes: 2));
+
+    // ✅ 檢查與已排程通知的間隔，確保至少間隔 3 分鐘（硬編碼）
+    try {
+      final scheduledNotifications = await _cache.loadSortedUpcoming(horizon: const Duration(days: 3));
+      
+      // 檢查 scheduledTime 是否與任何已排程通知間隔不足 3 分鐘
+      bool needsAdjustment = false;
+      DateTime? latestConflictTime;
+      
+      for (final entry in scheduledNotifications) {
+        final diffMinutes = (entry.when.difference(scheduledTime)).abs().inMinutes;
+        if (diffMinutes < bannerMinIntervalMinutes) {
+          needsAdjustment = true;
+          // 記錄最晚的衝突時間（用於確定推遲目標）
+          if (latestConflictTime == null || entry.when.isAfter(latestConflictTime)) {
+            latestConflictTime = entry.when;
+          }
+        }
+      }
+      
+      // 如果需要調整，向後推至少 3 分鐘
+      if (needsAdjustment && latestConflictTime != null) {
+        // 如果衝突通知在 scheduledTime 之後，推遲到衝突通知之後至少 3 分鐘
+        // 如果衝突通知在 scheduledTime 之前，推遲到 scheduledTime 之後至少 3 分鐘
+        final targetTime = latestConflictTime.isAfter(scheduledTime)
+            ? latestConflictTime.add(const Duration(minutes: bannerMinIntervalMinutes))
+            : scheduledTime.add(const Duration(minutes: bannerMinIntervalMinutes));
+        
+        scheduledTime = targetTime;
+        
+        if (kDebugMode) {
+          debugPrint('  ⏰ 橫幅通知時間已調整：與其他通知間隔不足 3 分鐘，從 $when 調整為 $scheduledTime');
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('  ⚠️ 檢查已排程通知時發生錯誤，使用原計劃時間: $e');
+      }
+      // 如果檢查失敗，繼續使用原計劃時間
+    }
 
     // iOS 完成通知：包含重新學習按鈕
     const iosDetails = DarwinNotificationDetails(
@@ -693,7 +735,7 @@ class NotificationService {
         '恭喜完成！🎉',
         '已完成「$productTitle」的所有內容學習！',
         tz.TZDateTime.from(scheduledTime, tz.local),
-        NotificationDetails(android: androidDetails, iOS: iosDetails),
+        const NotificationDetails(android: androidDetails, iOS: iosDetails),
         payload: jsonEncode(payload),
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         uiLocalNotificationDateInterpretation:

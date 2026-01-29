@@ -56,8 +56,8 @@ class MePage extends ConsumerWidget {
           ),
           const Divider(),
           ListTile(
-            leading: Icon(Icons.restore_outlined, color: Colors.red),
-            title: Text(
+            leading: const Icon(Icons.restore_outlined, color: Colors.red),
+            title: const Text(
               '重置所有数据',
               style: TextStyle(color: Colors.red),
             ),

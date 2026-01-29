@@ -22,11 +22,16 @@ class PushTask {
 }
 
 class PushScheduler {
-  static const Map<String, TimeOfDay> presetSlotTimes = {
-    'morning': TimeOfDay(hour: 9, minute: 10),
-    'noon': TimeOfDay(hour: 12, minute: 30),
-    'evening': TimeOfDay(hour: 18, minute: 40),
-    'night': TimeOfDay(hour: 21, minute: 40),
+  // ✅ 新的8个固定2小时时间段定义（时间范围）
+  static const Map<String, TimeRange> presetSlotRanges = {
+    '7-9': TimeRange(TimeOfDay(hour: 7, minute: 0), TimeOfDay(hour: 9, minute: 0)),
+    '9-11': TimeRange(TimeOfDay(hour: 9, minute: 0), TimeOfDay(hour: 11, minute: 0)),
+    '11-13': TimeRange(TimeOfDay(hour: 11, minute: 0), TimeOfDay(hour: 13, minute: 0)),
+    '13-15': TimeRange(TimeOfDay(hour: 13, minute: 0), TimeOfDay(hour: 15, minute: 0)),
+    '15-17': TimeRange(TimeOfDay(hour: 15, minute: 0), TimeOfDay(hour: 17, minute: 0)),
+    '17-19': TimeRange(TimeOfDay(hour: 17, minute: 0), TimeOfDay(hour: 19, minute: 0)),
+    '19-21': TimeRange(TimeOfDay(hour: 19, minute: 0), TimeOfDay(hour: 21, minute: 0)),
+    '21-23': TimeRange(TimeOfDay(hour: 21, minute: 0), TimeOfDay(hour: 23, minute: 0)),
   };
 
   static int _todToMin(TimeOfDay t) => t.hour * 60 + t.minute;
@@ -61,6 +66,102 @@ class PushScheduler {
   static DateTime _at(DateTime date, TimeOfDay tod) =>
       DateTime(date.year, date.month, date.day, tod.hour, tod.minute);
 
+  /// 在时间范围内完全随机生成时间点
+  /// 确保间隔至少 minIntervalMinutes（硬编码为3分钟）
+  static List<TimeOfDay> _generateTimesInRange(
+    TimeRange range,
+    int minIntervalMinutes, // 固定为3
+  ) {
+    final startMin = _todToMin(range.start);
+    final endMin = _todToMin(range.end);
+    final random = Random(); // 每次调用都创建新的 Random 实例，确保随机性
+    
+    // 计算时间范围的总分钟数
+    int rangeMinutes;
+    if (startMin < endMin) {
+      rangeMinutes = endMin - startMin;
+    } else {
+      // 跨天情况
+      rangeMinutes = (24 * 60 - startMin) + endMin;
+    }
+    
+    if (rangeMinutes < minIntervalMinutes) {
+      return [range.start];
+    }
+    
+    // 计算理论上最多可以生成多少个时间点（以3分钟间隔）
+    final maxPossibleTimes = (rangeMinutes / minIntervalMinutes).floor();
+    
+    // 生成尽可能多的时间点（但不超过50个），确保有足够的候选点
+    final targetCount = maxPossibleTimes.clamp(1, 50);
+    
+    final selectedTimes = <TimeOfDay>[];
+    int attempts = 0;
+    final maxAttempts = targetCount * 30; // 增加尝试次数以确保随机性
+    
+    while (selectedTimes.length < targetCount && attempts < maxAttempts) {
+      attempts++;
+      
+      // 在范围内完全随机生成一个时间点
+      int randomOffset = random.nextInt(rangeMinutes);
+      int randomMin = startMin + randomOffset;
+      
+      // 处理跨天情况：如果超过24小时，取模
+      if (randomMin >= 24 * 60) {
+        randomMin = randomMin % (24 * 60);
+      }
+      
+      final candidateTime = TimeOfDay(
+        hour: (randomMin ~/ 60) % 24,
+        minute: randomMin % 60,
+      );
+      
+      // 检查是否在范围内
+      bool inRange;
+      if (startMin < endMin) {
+        // 同一天范围
+        inRange = randomMin >= startMin && randomMin < endMin;
+      } else {
+        // 跨天范围：randomMin 应该在 startMin 之后或 endMin 之前
+        inRange = randomMin >= startMin || randomMin < endMin;
+      }
+      
+      if (!inRange) continue;
+      
+      // 检查与已选时间点的间隔（必须至少3分钟）
+      bool canAdd = true;
+      for (final selected in selectedTimes) {
+        final selectedMin = _todToMin(selected);
+        int diff;
+        
+        if (randomMin >= selectedMin) {
+          diff = randomMin - selectedMin;
+        } else {
+          // 跨天情况
+          diff = (24 * 60 - selectedMin) + randomMin;
+        }
+        
+        if (diff < minIntervalMinutes) {
+          canAdd = false;
+          break;
+        }
+      }
+      
+      if (canAdd) {
+        selectedTimes.add(candidateTime);
+      }
+    }
+    
+    // 如果随机生成失败，至少返回范围开始时间
+    if (selectedTimes.isEmpty) {
+      selectedTimes.add(range.start);
+    }
+    
+    // 按时间排序返回（保持时间顺序，但生成过程是完全随机的）
+    selectedTimes.sort((a, b) => _todToMin(a).compareTo(_todToMin(b)));
+    return selectedTimes;
+  }
+
   static List<TimeOfDay> _resolveTimes(PushConfig cfg) {
     if (cfg.timeMode == PushTimeMode.custom && cfg.customTimes.isNotEmpty) {
       if (kDebugMode) {
@@ -83,19 +184,121 @@ class PushScheduler {
     if (kDebugMode) {
       debugPrint('ℹ️ _resolveTimes: 使用預設時間模式，timeMode: ${cfg.timeMode.name}, customTimes.isEmpty: ${cfg.customTimes.isEmpty}');
     }
-    final slots = cfg.presetSlots.isEmpty ? ['night'] : cfg.presetSlots;
-    final list = slots
-        .map((s) => presetSlotTimes[s] ?? presetSlotTimes['night']!)
-        .toList()
-      ..sort((a, b) => _todToMin(a).compareTo(_todToMin(b)));
-    return list.take(5).toList();
+    
+    // ✅ 为每个选中的时间范围生成时间点（只支持新的时间范围格式：7-9, 9-11, 11-13, 13-15, 15-17, 17-19, 19-21, 21-23）
+    final slots = cfg.presetSlots.isEmpty ? ['21-23'] : cfg.presetSlots;
+    final allTimes = <TimeOfDay>[];
+    
+    for (final slot in slots) {
+      final range = presetSlotRanges[slot];
+      if (range != null) {
+        // ✅ 在范围内生成时间点，使用硬编码3分钟间隔
+        final timesInRange = _generateTimesInRange(range, 3);
+        allTimes.addAll(timesInRange);
+      } else {
+        // ✅ 忽略旧的预设值（morning, noon, evening, night）和未知的时间段
+        if (kDebugMode) {
+          final isOldPreset = ['morning', 'noon', 'evening', 'night'].contains(slot);
+          if (isOldPreset) {
+            debugPrint('  ⚠️ _resolveTimes: 已移除旧预设值 "$slot"，请使用新的时间范围格式（如 "7-9", "13-15" 等），已忽略');
+          } else {
+            debugPrint('  ⚠️ _resolveTimes: 未知的预设时间段 "$slot"，已忽略');
+          }
+        }
+      }
+    }
+    
+    // 排序并去重
+    allTimes.sort((a, b) => _todToMin(a).compareTo(_todToMin(b)));
+    final uniqueTimes = <TimeOfDay>[];
+    TimeOfDay? lastTime;
+    for (final time in allTimes) {
+      if (lastTime == null || _todToMin(time) != _todToMin(lastTime)) {
+        uniqueTimes.add(time);
+        lastTime = time;
+      }
+    }
+    
+    // ✅ 不在这里限制数量，让所有时间段的时间点都可用，以便后续随机选择
+    // 注意：这里不强制全局最小间隔，因为不同时间段的时间点可能很近
+    // 全局最小间隔会在 _applyFreq 和 _enforceGlobalMinInterval 中处理
+    return uniqueTimes;
   }
 
   static List<TimeOfDay> _applyFreq(List<TimeOfDay> times, int freq, PushTimeMode timeMode, int minIntervalMinutes) {
     freq = freq.clamp(1, 5);
-    if (times.isEmpty) return [presetSlotTimes['night']!];
+    
+    // ✅ 预设模式：如果 times 为空，使用默认时间段 21-23 生成时间点
+    if (times.isEmpty && timeMode == PushTimeMode.preset) {
+      final defaultRange = presetSlotRanges['21-23']!;
+      times = _generateTimesInRange(defaultRange, 3); // 硬编码3分钟间隔
+    }
+    
+    if (times.isEmpty) {
+      // 自訂模式或其他情况：返回默认时间
+      return [presetSlotRanges['21-23']!.start];
+    }
 
-    if (freq <= times.length) return times.take(freq).toList();
+    // ✅ 预设模式：从所有时间点中随机选择 freq 个，确保真正随机分布
+    if (timeMode == PushTimeMode.preset) {
+      if (times.isEmpty) {
+        return times;
+      }
+      
+      // ✅ 完全随机选择：打乱所有时间点，然后取前 freq 个
+      final shuffled = List<TimeOfDay>.from(times)..shuffle(Random());
+      final selected = shuffled.take(freq).toList();
+      
+      // ✅ 确保选中的时间点之间至少间隔3分钟
+      final enforced = <TimeOfDay>[];
+      TimeOfDay? lastTime;
+      
+      for (final time in selected) {
+        if (lastTime == null) {
+          enforced.add(time);
+          lastTime = time;
+        } else {
+          final timeMin = _todToMin(time);
+          final lastMin = _todToMin(lastTime);
+          int diff;
+          if (timeMin >= lastMin) {
+            diff = timeMin - lastMin;
+          } else {
+            // 跨天情况
+            diff = (24 * 60 - lastMin) + timeMin;
+          }
+          if (diff >= minIntervalMinutes) {
+            enforced.add(time);
+            lastTime = time;
+          }
+        }
+      }
+      
+      // ✅ 如果因为间隔限制导致数量不足，从剩余时间点中补充
+      if (enforced.length < freq && enforced.length < shuffled.length) {
+        final remaining = shuffled.where((t) => !enforced.contains(t)).toList();
+        for (final time in remaining) {
+          if (enforced.length >= freq) break;
+          
+          final timeMin = _todToMin(time);
+          final lastMin = _todToMin(lastTime!);
+          int diff;
+          if (timeMin >= lastMin) {
+            diff = timeMin - lastMin;
+          } else {
+            diff = (24 * 60 - lastMin) + timeMin;
+          }
+          if (diff >= minIntervalMinutes) {
+            enforced.add(time);
+            lastTime = time;
+          }
+        }
+      }
+      
+      // 按时间排序返回
+      enforced.sort((a, b) => _todToMin(a).compareTo(_todToMin(b)));
+      return enforced;
+    }
 
     // ✅ 自訂時間模式：如果 freq 大於 customTimes 數量，基於現有時間擴展
     // 例如：customTimes=[07:14], freq=2 → [07:14, 09:14]（間隔 2 小時）
@@ -116,25 +319,8 @@ class PushScheduler {
       return base.take(5).toList();
     }
 
-    // ✅ 預設模式：擴展時間列表
-    final base = List<TimeOfDay>.from(times);
-    const order = ['morning', 'noon', 'evening', 'night'];
-    while (base.length < freq) {
-      for (final k in order) {
-        final t = presetSlotTimes[k]!;
-        final exists = base.any((x) => _todToMin(x) == _todToMin(t));
-        if (!exists) {
-          base.add(t);
-          break;
-        }
-      }
-      if (base.length >= freq) break;
-      final last = base.last;
-      final mins = _todToMin(last) + minIntervalMinutes;
-      base.add(TimeOfDay(hour: (mins ~/ 60) % 24, minute: mins % 60));
-    }
-    base.sort((a, b) => _todToMin(a).compareTo(_todToMin(b)));
-    return base.take(5).toList();
+    // 其他情况：直接返回前 freq 个
+    return times.take(freq).toList();
   }
 
   static bool _allowedDay(GlobalPushSettings g, PushConfig p, DateTime d) {
@@ -331,10 +517,10 @@ class PushScheduler {
 
         final dts = filtered.map((t) => _at(date, t)).toList()..sort();
         
-        // ✅ 自訂時間模式：即使小於最短間隔，仍以自訂時間為主
+        // ✅ 预设模式：使用硬编码3分钟间隔；自訂時間模式：即使小於最短間隔，仍以自訂時間為主
         final enforced = lp.pushConfig.timeMode == PushTimeMode.custom
             ? dts.take(5).toList() // 自訂時間模式：不強制執行最短間隔
-            : _enforceMinInterval(dts, lp.pushConfig.minIntervalMinutes)
+            : _enforceMinInterval(dts, 3) // ✅ 预设模式：硬编码3分钟间隔
                 .take(5)
                 .toList();
         
@@ -455,6 +641,59 @@ class PushScheduler {
       // ✅ 再穩定：productId
       return a.productId.compareTo(b.productId);
     });
-    return tasks.take(iosSafeMaxScheduled).toList();
+    
+    // ✅ 全局最小间隔强制执行（硬编码3分钟，跨产品）
+    const globalMinInterval = 3; // 全局最小间隔（分钟）
+    final finalTasks = _enforceGlobalMinInterval(tasks, globalMinInterval);
+    
+    return finalTasks.take(iosSafeMaxScheduled).toList();
+  }
+
+  /// ✅ 全局最小间隔强制执行（跨产品）
+  /// 确保所有产品的通知之间至少间隔 minIntervalMinutes 分钟
+  static List<PushTask> _enforceGlobalMinInterval(List<PushTask> tasks, int minIntervalMinutes) {
+    if (tasks.length <= 1) return tasks;
+    
+    // 按时间排序
+    final sorted = List<PushTask>.from(tasks)
+      ..sort((a, b) => a.when.compareTo(b.when));
+    
+    final result = <PushTask>[];
+    DateTime? lastTime;
+    
+    for (final task in sorted) {
+      if (lastTime == null) {
+        result.add(task);
+        lastTime = task.when;
+      } else {
+        // ✅ 计算时间间隔（已排序，所以 task.when >= lastTime）
+        final diffMinutes = task.when.difference(lastTime).inMinutes;
+        
+        if (diffMinutes >= minIntervalMinutes) {
+          // 间隔足够，直接添加
+          result.add(task);
+          lastTime = task.when;
+        } else {
+          // ✅ 间隔不足，调整时间：将当前任务的时间向后移动
+          final adjustedTime = lastTime.add(Duration(minutes: minIntervalMinutes));
+          result.add(PushTask(
+            productId: task.productId,
+            when: adjustedTime,
+            item: task.item,
+            isLastInProduct: task.isLastInProduct,
+          ));
+          lastTime = adjustedTime;
+          
+          if (kDebugMode) {
+            debugPrint('  ⏰ _enforceGlobalMinInterval: 调整任务时间 ${task.productId} 从 ${task.when.hour}:${task.when.minute.toString().padLeft(2, '0')} 到 ${adjustedTime.hour}:${adjustedTime.minute.toString().padLeft(2, '0')}（间隔 $diffMinutes 分钟 < $minIntervalMinutes 分钟）');
+          }
+        }
+      }
+    }
+    
+    // ✅ 重新排序以确保时间顺序正确（因为调整后可能改变顺序）
+    result.sort((a, b) => a.when.compareTo(b.when));
+    
+    return result;
   }
 }
